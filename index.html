@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AzTier - Azure Administrative Tiering</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section class="section">
+    <div class="container">
+      <h1 class="title has-text-primary" id="main-title">🌩️ Azure Administrative Tiering (AzTier)</h1>
+      <h2 class="subtitle">Browse Azure administrative assets categorized based on known attack paths.</h2>
+      <!-- Triple toggle switch -->
+      <div class="tabs is-toggle is-fullwidth is-large" id="main-tabs">
+        <!-- Toggle switch will be injected here by JS -->
+      </div>
+      <!-- Tier filter buttons -->
+      <div id="tier-filter-bar" style="display:flex; align-items:center; justify-content:flex-start; margin-bottom:1.2em;">
+        <!-- Tier buttons will be injected here by JS -->
+      </div>
+      <div id="content-area">
+        <!-- Dynamic content will be injected here -->
+      </div>
+    </div>
+  </section>
+  <div class="disclaimer-btn-canvas-row">
+    <button id="disclaimer-btn" class="disclaimer-btn-custom" aria-label="Disclaimer">Disclaimer</button>
+  </div>
+  <footer class="footer has-text-centered">
+    <div class="content">
+      <p>Project by <a href="https://github.com/emiliensocchi?tab=repositories">Emilien Socchi</a> | <a href="https://github.com/emiliensocchi/azure-tiering">AzTier</a></p>
+    </div>
+  </footer>
+  <script src="main.js"></script>
+</body>
+</html>
