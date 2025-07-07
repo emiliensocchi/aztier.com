@@ -323,12 +323,13 @@ async function renderContent(tab, search = '') {
     html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<a href='https://github.com/emiliensocchi/azure-tiering/blob/main/Microsoft%20Graph%20application%20permissions/Untiered%20MSGraph%20application%20permissions.md' style='text-decoration:underline;color:inherit;'>more info</a>)</div>`;
   }
   html += renderTierFilter(tab);
-  html += '<div class="field" style="margin-bottom:1.5em;">' +
-    '<div class="control has-icons-left">' +
+  html += '<div class="field" style="margin-bottom:1.5em; position:relative;">' +
+    '<div class="control has-icons-left has-icons-right">' +
       '<input class="input is-medium" type="text" id="searchInputWide" placeholder="Search by name or Id">' +
       '<span class="icon is-left">' +
         '<i class="fas fa-search"></i>' +
       '</span>' +
+      '<span class="icon is-right" id="search-clear-btn"><i class="fas fa-times"></i></span>' +
     '</div>' +
   '</div>';
   if (tab === 'azure') html += renderAzure(allData.azure, search);
@@ -337,27 +338,41 @@ async function renderContent(tab, search = '') {
   document.getElementById('content-area').innerHTML = html;
   setupTierFilter(tab);
   setupRoleEntryToggles(tab);
+  // After rendering the search bar, set up the clear (cross) button logic
   const wideInput = document.getElementById('searchInputWide');
+  const clearBtn = document.getElementById('search-clear-btn');
   if (wideInput) {
     wideInput.value = search;
     // Remove previous event listeners by cloning
     const wideInputClone = wideInput.cloneNode(true);
     wideInput.parentNode.replaceChild(wideInputClone, wideInput);
     wideInputClone.value = search;
-    // Only add input event, do not focus or set selection
+    // Show/hide clear button based on input
+    function updateClearBtn() {
+      if (wideInputClone.value.length > 0) {
+        clearBtn.classList.add('visible');
+      } else {
+        clearBtn.classList.remove('visible');
+      }
+    }
     wideInputClone.addEventListener('input', e => {
-      // Only update the list, do not re-render the input field
-      // This prevents the input from being replaced and losing focus
+      updateClearBtn();
       const value = e.target.value;
-      // Instead of re-rendering the whole content, just filter the entries
       filterRoleEntries(currentTab, value);
     });
-    // Only blur on Enter
     wideInputClone.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') {
         wideInputClone.blur();
       }
     });
+    updateClearBtn();
+    // Clear button click handler
+    clearBtn.onclick = function() {
+      wideInputClone.value = '';
+      updateClearBtn();
+      filterRoleEntries(currentTab, '');
+      wideInputClone.focus();
+    };
   }
 }
 

@@ -195,10 +195,32 @@ a:hover {
   display: block; /* Always show subtitle by default */
 }
 @media (max-width: 600px) {
+  #main-title {
+    font-size: 1.3em;
+    margin-bottom: 0.2em;
+    color: transparent !important;
+    position: relative;
+    min-height: 1.5em;
+    text-align: left;
+  }
+  #main-title::before {
+    content: '\1F329\FE0F AzTier'; /* 🌩️ AzTier */
+    font-size: 1.3em;
+    color: #3570b3;
+    font-weight: 700;
+    font-family: inherit;
+    display: block;
+    position: static;
+    width: 100%;
+    text-align: left;
+    line-height: 1.2;
+  }
   .subtitle {
-    font-size: 0.8em; /* ~30% smaller than desktop */
+    font-size: 0.8em;
     margin-bottom: 1.2em;
-    display: block !important; /* Ensure always visible on mobile */
+    display: block !important;
+    text-align: left;
+    margin-top: 0.1em;
   }
 }
 .tab-toggle-switch {
@@ -523,21 +545,30 @@ a:hover {
 @media (max-width: 600px) {
   #main-title {
     font-size: 1.3em;
-    margin-bottom: 0.3em;
+    margin-bottom: 0.2em;
+    color: transparent !important;
+    position: relative;
+    min-height: 1.5em;
+    text-align: left;
   }
   #main-title::before {
-    content: 'AzTier';
+    content: '\1F329\FE0F AzTier'; /* 🌩️ AzTier */
     font-size: 1.3em;
     color: #3570b3;
     font-weight: 700;
     font-family: inherit;
     display: block;
-  }
-  #main-title {
-    color: transparent !important;
+    position: static;
+    width: 100%;
+    text-align: left;
+    line-height: 1.2;
   }
   .subtitle {
-    display: none;
+    font-size: 0.8em;
+    margin-bottom: 1.2em;
+    display: block !important;
+    text-align: left;
+    margin-top: 0.1em;
   }
 }
 ::-webkit-scrollbar {
@@ -561,6 +592,39 @@ a:hover {
 @media (max-width: 700px) {
   .disclaimer-btn-canvas-topright {
     top: 0.7em;
+    right: 0.7em;
+  }
+}
+.input.is-medium::-webkit-input-placeholder { color: #b0b7c3; }
+.input.is-medium:-ms-input-placeholder { color: #b0b7c3; }
+.input.is-medium::placeholder { color: #b0b7c3; }
+
+/* Make the right icon (clear button) always take up space, but only visible when needed */
+.has-icons-right .icon.is-right {
+  position: absolute;
+  right: 1.1em;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.has-icons-right .icon.is-right.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.input.is-medium + .icon.is-right {
+  pointer-events: auto;
+  cursor: pointer;
+  color: #22334d; /* dark color */
+  transition: color 0.18s;
+}
+.input.is-medium + .icon.is-right:hover {
+  color: #e74c3c;
+}
+@media (max-width: 600px) {
+  .input.is-medium + .icon.is-right {
+    font-size: 1.2em;
     right: 0.7em;
   }
 }
