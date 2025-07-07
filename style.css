@@ -191,7 +191,7 @@ a:hover {
     text-align: left;
   }
   #main-title::before {
-    content: '\1F329\FE0F AzTier';
+    content: '🌩️ AzTier';
     font-size: 1.3em;
     color: #3570b3;
     font-weight: 700;
