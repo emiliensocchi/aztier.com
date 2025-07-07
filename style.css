@@ -192,6 +192,14 @@ a:hover {
   font-size: 1.15em;
   margin-bottom: 2.2em;
   font-weight: 500;
+  display: block; /* Always show subtitle by default */
+}
+@media (max-width: 600px) {
+  .subtitle {
+    font-size: 0.8em; /* ~30% smaller than desktop */
+    margin-bottom: 1.2em;
+    display: block !important; /* Ensure always visible on mobile */
+  }
 }
 .tab-toggle-switch {
   display: flex;
@@ -367,11 +375,11 @@ a:hover {
 .crown-emoji, .crown-emoji-entry {
   display: inline-block;
   font-size: 1em;
-  vertical-align: middle;
+  vertical-align: -0.18em;
   margin-left: 0.3em;
   margin-right: 0.1em;
   position: relative;
-  top: 0.08em;
+  top: 0;
   line-height: 1;
   padding: 0;
   border: none;
@@ -379,7 +387,8 @@ a:hover {
 @media (max-width: 600px) {
   .crown-emoji, .crown-emoji-entry {
     font-size: 0.95em;
-    top: 0.12em;
+    vertical-align: -0.18em;
+    top: 0;
   }
 }
 .section-label {
@@ -542,4 +551,16 @@ a:hover {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #b2bec3;
+}
+.disclaimer-btn-canvas-topright {
+  position: absolute;
+  top: 1.2em;
+  right: 1.5em;
+  z-index: 10;
+}
+@media (max-width: 700px) {
+  .disclaimer-btn-canvas-topright {
+    top: 0.7em;
+    right: 0.7em;
+  }
 }

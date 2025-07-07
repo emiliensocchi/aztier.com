@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AzTier - Azure Administrative Tiering</title>
+  <title>AzTier: Azure Administrative Tiering</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='85'>🌩️</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -12,7 +13,8 @@
 </head>
 <body>
   <section class="section">
-    <div class="container">
+    <div class="container" style="position:relative;">
+      <button id="disclaimer-btn" class="disclaimer-btn-custom disclaimer-btn-canvas-topright" aria-label="Disclaimer">Info</button>
       <h1 class="title has-text-primary" id="main-title">🌩️ Azure Administrative Tiering (AzTier)</h1>
       <h2 class="subtitle">Browse Azure administrative assets categorized based on known attack paths.</h2>
       <!-- Triple toggle switch -->
@@ -28,12 +30,9 @@
       </div>
     </div>
   </section>
-  <div class="disclaimer-btn-canvas-row">
-    <button id="disclaimer-btn" class="disclaimer-btn-custom" aria-label="Disclaimer">Disclaimer</button>
-  </div>
   <footer class="footer has-text-centered">
     <div class="content">
-      <p>Project by <a href="https://github.com/emiliensocchi?tab=repositories">Emilien Socchi</a> | <a href="https://github.com/emiliensocchi/azure-tiering">AzTier</a></p>
+      <p>Project by <a href="https://github.com/emiliensocchi?tab=repositories">Emilien Socchi</a></p>
     </div>
   </footer>
   <script src="main.js"></script>

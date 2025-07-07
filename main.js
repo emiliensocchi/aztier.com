@@ -344,12 +344,51 @@ async function renderContent(tab, search = '') {
     const wideInputClone = wideInput.cloneNode(true);
     wideInput.parentNode.replaceChild(wideInputClone, wideInput);
     wideInputClone.value = search;
-    wideInputClone.focus();
-    wideInputClone.setSelectionRange(search.length, search.length);
+    // Only add input event, do not focus or set selection
     wideInputClone.addEventListener('input', e => {
-      renderContent(currentTab, e.target.value);
+      // Only update the list, do not re-render the input field
+      // This prevents the input from being replaced and losing focus
+      const value = e.target.value;
+      // Instead of re-rendering the whole content, just filter the entries
+      filterRoleEntries(currentTab, value);
+    });
+    // Only blur on Enter
+    wideInputClone.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        wideInputClone.blur();
+      }
     });
   }
+}
+
+// Add this function to filter entries without re-rendering the input
+function filterRoleEntries(tab, search) {
+  let html = '';
+  if (tab === 'azure') html = renderAzure(allData.azure, search);
+  if (tab === 'entra') html = renderEntra(allData.entra, search);
+  if (tab === 'msgraph') html = renderMsGraph(allData.msgraph, search);
+  // Replace only the entries, not the whole content
+  const contentArea = document.getElementById('content-area');
+  if (!contentArea) return;
+  // Find the first .field (search bar) and tier filter, keep them, replace the rest
+  const nodes = Array.from(contentArea.children);
+  let lastStaticIdx = 0;
+  for (let i = 0; i < nodes.length; ++i) {
+    if (nodes[i].classList.contains('field')) {
+      lastStaticIdx = i;
+    }
+  }
+  // Remove all nodes after the search bar
+  while (contentArea.children.length > lastStaticIdx + 1) {
+    contentArea.removeChild(contentArea.lastChild);
+  }
+  // Insert new entries
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  Array.from(temp.children).forEach(child => {
+    contentArea.appendChild(child);
+  });
+  setupRoleEntryToggles(tab);
 }
 
 function setupRoleEntryToggles(tab) {
@@ -445,7 +484,7 @@ function addDisclaimerButton() {
   function updateTitleForMobile() {
     const title = document.getElementById('main-title');
     if (!title) return;
-    if (window.innerWidth <= 500) {
+    if (window.innerWidth <= 600) {
       title.textContent = '🌩️ AzTier';
     } else {
       title.textContent = '🌩️ Azure Administrative Tiering (AzTier)';
@@ -462,7 +501,14 @@ function showDisclaimerPopup() {
   popup.innerHTML = [
     '<div class="disclaimer-modal-bg"></div>',
     '<div class="disclaimer-modal-box">',
-      '<div style="margin-bottom:1.5em; font-size:1.2em;">AzTier is not a Microsoft service or product, but a personal project with no implicit or explicit obligations. For more information, see the project \'s <a href=https://github.com/emiliensocchi/azure-tiering?tab=readme-ov-file#-disclaimer>original disclaimer</a>.</div>',
+      '<div class="info-section">',
+        '<div class="info-section-title"><span class="icon">ℹ️</span> <strong>About</strong></div>',
+        '<div class="info-section-content" style="margin-bottom:1.5em; font-size:1.1em;">This is a simple frontend for the <a href="https://github.com/emiliensocchi/azure-tiering">Azure Administrative Tiering (AzTier)</a> project.</div>',
+      '</div>',
+      '<div class="info-section">',
+        '<div class="info-section-title"><span class="icon">📢</span> <strong>Disclaimer</strong></div>',
+        '<div class="info-section-content" style="margin-bottom:1.2em; font-size:1.05em;">AzTier is not a Microsoft service or product, but a personal project with no implicit or explicit obligations. For more information, see the project\'s <a href=https://github.com/emiliensocchi/azure-tiering?tab=readme-ov-file#-disclaimer>original disclaimer</a>.</div>',
+      '</div>',
       '<button class="button is-primary" id="close-disclaimer">Close</button>',
     '</div>'
   ].join('');
