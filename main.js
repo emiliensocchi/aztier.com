@@ -323,6 +323,50 @@ async function renderContent(tab, search = '') {
     html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<a href='https://github.com/emiliensocchi/azure-tiering/blob/main/Microsoft%20Graph%20application%20permissions/Untiered%20MSGraph%20application%20permissions.md' style='text-decoration:underline;color:inherit;'>more info</a>)</div>`;
   }
   html += renderTierFilter(tab);
+  // Insert tier definitions for each selected tier, with different placeholders for each tab
+  const selected = selectedTiers[tab] || [];
+  // Sort selected tiers numerically before rendering definitions
+  const sortedSelected = [...selected].sort((a, b) => Number(a) - Number(b));
+  if (sortedSelected.length > 0) {
+    let defs = sortedSelected.map(tier => {
+      let def = '';
+      if (tab === 'azure') {
+        if (tier === 0) def = 'Tier 0Family of privilege ascenders: Roles with a risk of privilege escalation via one or multiple resource types in scope.';
+        else if (tier === 1) def = 'Tier 1Family of lateral navigators: Roles with a risk of lateral movement via data-plane access to a specific resource type in scope, but with a limited risk for privilege escalation.';
+        else if (tier === 2) def = 'Tier 2Family of data explorers: Roles with data-plane access to a specific resource type in scope, but with a limited risk for lateral movement and without a risk for privilege escalation.';
+        else if (tier === 3) def = 'Tier 3Family of unprivileged Azure users: Roles with little to no security implications.';
+      } else if (tab === 'entra') {
+        if (tier === 0) def = 'Tier 0Family of Global Admins: Roles with a risk of having a direct or indirect path to Global Admin and full tenant takeover.';
+        else if (tier === 1) def = 'Tier 1Family of M365 and restricted Entra Admins: Roles with full access to individual Microsoft 365 services, limited administrative access to Entra ID, or global read access across services, but without a known path to Global Admin.';
+        else if (tier === 2) def = 'Tier 2Family of unprivileged administrators: Roles with little to no security implications.';
+      } else if (tab === 'msgraph') {
+        if (tier === 0) def = 'Tier 0Family of Global Admins: Permissions with a risk of having a direct or indirect path to Global Admin and full tenant takeover.';
+        else if (tier === 1) def = 'Tier 1Family of restricted Graph permissions: Permissions with write access to MS Graph scopes or read access to sensitive scopes (e.g. email content), but without a known path to Global Admin.';
+        else if (tier === 2) def = 'Tier 2Family of unprivileged Graph permission: Permissions with read access to MS Graph scopes and little to no security implications.';
+      }
+      // Extract label and description if present (split at first colon)
+      let label = '';
+      let desc = def;
+      const colonIdx = def.indexOf(':');
+      if (colonIdx !== -1) {
+        label = def.slice(0, colonIdx);
+        desc = def.slice(colonIdx + 1);
+      }
+      // Extract tier number for class
+      let tierNum = '';
+      const match = label.match(/Tier ?(\d+)/);
+      if (match) tierNum = match[1];
+      // Compose tier label with badge style
+      let tierLabel = label;
+      if (tierNum !== '') {
+        tierLabel = `<span class="tier-badge ${getTierClass(tab, parseInt(tierNum))}">Tier ${tierNum}</span>` + label.replace(/Tier ?\d+/, '');
+      }
+      return def ? `<div class="tier-definition faded-tier" style="margin-bottom:0.5em;"><span class="is-size-7"><strong>${tierLabel}</strong>:${desc}</span></div>` : '';
+    }).join('');
+    if (defs) {
+      html += `<div id="tier-definition-bar" style="margin-bottom:1em;">${defs}</div>`;
+    }
+  }
   html += '<div class="field" style="margin-bottom:1.5em; position:relative;">' +
     '<div class="control has-icons-left has-icons-right">' +
       '<input class="input is-medium" type="text" id="searchInputWide" placeholder="Search by name or Id">' +
