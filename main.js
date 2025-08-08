@@ -94,6 +94,15 @@ function getSelectedTiers(tab) {
   return selectedTiers[tab];
 }
 
+function updateURIHash(tab, selectedTiers) {
+  if (!selectedTiers || selectedTiers.length === 0) {
+    history.replaceState(null, '', `#${tab}`);
+  } else {
+    const hash = `${tab}-tier-${selectedTiers.join('-')}`;
+    history.replaceState(null, '', `#${hash}`);
+  }
+}
+
 function setupTierFilter(tab) {
   const group = document.getElementById('tier-filter-group');
   if (!group) return;
@@ -115,6 +124,7 @@ function setupTierFilter(tab) {
         selectedTiers[tab] = selectedTiers[tab].filter(t => t !== tier);
       }
     }
+    updateURIHash(tab, selectedTiers[tab]);
     renderContent(tab, document.getElementById('searchInputWide').value);
   });
 }
@@ -523,6 +533,7 @@ function setupTabs() {
   btns.forEach(btn => {
     btn.onclick = () => {
       currentTab = btn.getAttribute('data-tab');
+      updateURIHash(currentTab, selectedTiers[currentTab]);
       updateToggleActive();
       renderContent(currentTab, document.getElementById('searchInputWide') ? document.getElementById('searchInputWide').value : '');
     };
@@ -576,8 +587,26 @@ function showDisclaimerPopup() {
   popup.querySelector('.disclaimer-modal-bg').onclick = () => popup.remove();
 }
 
+// Parse the URI hash on load to pre-select tab and filters
+function parseURIHash() {
+  const hash = window.location.hash.slice(1); // Remove the '#' character
+  if (!hash) return;
+
+  const [tab, ...filters] = hash.split('-');
+  if (tab && ['azure', 'entra', 'msgraph'].includes(tab)) {
+    currentTab = tab;
+    if (filters.length > 0 && filters[0] === 'tier') {
+      const tiers = filters.slice(1).map(t => parseInt(t)).filter(t => !isNaN(t));
+      selectedTiers[tab] = tiers;
+    } else {
+      selectedTiers[tab] = [];
+    }
+  }
+}
+
 // Initial load
 async function init() {
+  parseURIHash();
   allData.azure = await fetchData('azure');
   allData.entra = await fetchData('entra');
   allData.msgraph = await fetchData('msgraph');
