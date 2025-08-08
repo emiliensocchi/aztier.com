@@ -500,3 +500,8 @@ a:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: #b2bec3;
 }
+.link-like {
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

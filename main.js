@@ -15,27 +15,20 @@ async function fetchData(tab) {
   return await resp.json();
 }
 
-// Utility: fetch untiered Entra roles count from markdown table
-async function fetchUntieredEntraCount() {
-  // Fetch the markdown file as text
-  const resp = await fetch('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/Untiered%20Entra%20roles.md');
-  const text = await resp.text();
-  // Find the Additions table
-  const additionsSection = text.split('### ➕ Additions')[1]?.split('###')[0] || '';
-  // Count lines that look like table rows (start with | and not header/separator)
-  const lines = additionsSection.split('\n').filter(l => l.startsWith('|') && !l.startsWith('|---') && !l.startsWith('| Detected on'));
-  return lines.length;
-}
-
-// Utility: fetch untiered MS Graph permissions count from markdown table
-async function fetchUntieredMsGraphCount() {
-  const resp = await fetch('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/Untiered%20MSGraph%20application%20permissions.md');
-  const text = await resp.text();
-  // Find the Additions table
-  const additionsSection = text.split('### ➕ Additions')[1]?.split('###')[0] || '';
-  // Count lines that look like table rows (start with | and not header/separator)
-  const lines = additionsSection.split('\n').filter(l => l.startsWith('|') && !l.startsWith('|---') && !l.startsWith('| Detected on'));
-  return lines.length;
+// Utility: fetch untiered roles/permissions count from JSON file
+async function fetchUntieredCount(url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error(`Failed to fetch untiered data from ${url}`);
+      return 0;
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data.length : 0;
+  } catch (error) {
+    console.error(`Error fetching untiered data from ${url}:`, error);
+    return 0;
+  }
 }
 
 function getTierClass(tab, tier) {
@@ -325,12 +318,12 @@ async function renderContent(tab, search = '') {
     let b = allData.entra.filter(item => item.id).length;
     let a = window._untieredEntraCount || 0;
     let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<a href='https://github.com/emiliensocchi/azure-tiering/blob/main/Entra%20roles/Untiered%20Entra%20roles.md' style='text-decoration:underline;color:inherit;'>more info</a>)</div>`;
+    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json')">more info</span>)</div>`;
   } else if (tab === 'msgraph') {
     let b = allData.msgraph.filter(item => item.id).length;
     let a = window._untieredMsGraphCount || 0;
     let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<a href='https://github.com/emiliensocchi/azure-tiering/blob/main/Microsoft%20Graph%20application%20permissions/Untiered%20MSGraph%20application%20permissions.md' style='text-decoration:underline;color:inherit;'>more info</a>)</div>`;
+    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json')">more info</span>)</div>`;
   }
   html += renderTierFilter(tab);
   // Insert tier definitions for each selected tier, with different placeholders for each tab
@@ -587,6 +580,57 @@ function showDisclaimerPopup() {
   popup.querySelector('.disclaimer-modal-bg').onclick = () => popup.remove();
 }
 
+// Function to open the popup and load JSON data
+async function showJsonPopup(url) {
+  const popup = document.getElementById('json-popup');
+  const content = document.getElementById('json-content');
+  content.innerHTML = '<p>Loading...</p>';
+  popup.classList.add('is-active');
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to fetch data');
+    const data = await response.json();
+    content.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+  } catch (error) {
+    content.innerHTML = `<p class="has-text-danger">Error: ${error.message}</p>`;
+  }
+}
+
+// Function to close the popup
+function closeJsonPopup() {
+  const popup = document.getElementById('json-popup');
+  popup.classList.remove('is-active');
+}
+
+// Attach event listeners for closing the popup
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('close-popup').addEventListener('click', closeJsonPopup);
+  document.querySelector('.modal-background').addEventListener('click', closeJsonPopup);
+});
+
+// Add "More Info" buttons to untiered sections
+function addMoreInfoButtons() {
+  const entraMoreInfoBtn = document.createElement('button');
+  entraMoreInfoBtn.className = 'button is-small is-info';
+  entraMoreInfoBtn.textContent = 'More Info';
+  entraMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json');
+
+  const msGraphMoreInfoBtn = document.createElement('button');
+  msGraphMoreInfoBtn.className = 'button is-small is-info';
+  msGraphMoreInfoBtn.textContent = 'More Info';
+  msGraphMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json');
+
+  // Append buttons to respective sections (assuming IDs exist for these sections)
+  const entraSection = document.getElementById('entra-untiered-section');
+  const msGraphSection = document.getElementById('msgraph-untiered-section');
+
+  if (entraSection) entraSection.appendChild(entraMoreInfoBtn);
+  if (msGraphSection) msGraphSection.appendChild(msGraphMoreInfoBtn);
+}
+
+document.addEventListener('DOMContentLoaded', addMoreInfoButtons);
+
 // Parse the URI hash on load to pre-select tab and filters
 function parseURIHash() {
   const hash = window.location.hash.slice(1); // Remove the '#' character
@@ -606,13 +650,16 @@ function parseURIHash() {
 
 // Initial load
 async function init() {
-  parseURIHash();
+  const entraUntieredUrl = 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json';
+  const msGraphUntieredUrl = 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json';
+
+  window._untieredEntraCount = await fetchUntieredCount(entraUntieredUrl);
+  window._untieredMsGraphCount = await fetchUntieredCount(msGraphUntieredUrl);
+
   allData.azure = await fetchData('azure');
   allData.entra = await fetchData('entra');
   allData.msgraph = await fetchData('msgraph');
-  // Fetch untiered Entra count and store globally for use in renderContent
-  window._untieredEntraCount = await fetchUntieredEntraCount();
-  window._untieredMsGraphCount = await fetchUntieredMsGraphCount();
+
   renderContent(currentTab);
   setupTabs();
   addDisclaimerButton();
