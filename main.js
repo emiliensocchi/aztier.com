@@ -75,6 +75,25 @@ function getTierDefinition(assetType, tier) {
   } 
 }
 
+function getTierName(assetType, tier) {
+  // assetType: 'Azure', 'Entra', 'MSGraph'
+  if (tier === undefined || tier === '') return '';
+  if (assetType === 'Azure') {
+    if (tier === '0') return 'Family of privilege ascenders';
+    else if (tier === '1') return 'Family of lateral navigators';
+    else if (tier === '2') return 'Family of data explorers';
+    else if (tier === '3') return 'Family of unprivileged Azure users';
+  } else if (assetType === 'Entra') {
+    if (tier === '0') return 'Family of Global Admins';
+    else if (tier === '1') return 'Family of M365 and restricted Entra Admins';
+    else if (tier === '2') return 'Family of unprivileged administrators';
+  } else if (assetType === 'MSGraph') {
+    if (tier === '0') return 'Family of Global Admins';
+    else if (tier === '1') return 'Family of restricted Graph permissions';
+    else if (tier === '2') return 'Family of unprivileged Graph permissions';
+  } 
+}
+
 // On load, all tiers are shown, but no filter is selected (all buttons greyed out)
 let selectedTiers = { azure: null, entra: null, msgraph: null };
 
@@ -153,12 +172,12 @@ function renderAzure(data, search = '') {
       const id = item.id || '';
       const pathType = item.pathType || '';
       const isDirect = pathType && pathType.toLowerCase() === 'direct';
-      // Only match against name and id
+      // Only match against name and id 
       const match = (name + id).toLowerCase().includes(search.toLowerCase());
       if (!match) return '';
       let details = '';
       // Always show Tier definition first
-      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('Azure', tier)}</span></div>`;
+      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier name:</strong> ${getTierName('Azure', tier)}</span><br><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('Azure', tier)}</span></div>`;
       // Card stack for details
       let detailBlocks = [];
       if (tier === 2 || tier === '2' || tier === 3 || tier === '3') {
@@ -218,7 +237,7 @@ function renderEntra(data, search = '') {
       if (!match) return '';
       let details = '';
       // Always show Tier definition first
-      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('Entra', tier)}</span></div>`;
+      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier name:</strong> ${getTierName('Entra', tier)}</span><br><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('Entra', tier)}</span></div>`;
       let detailBlocks = [];
       if (tier === 1 || tier === '1') {
         if (item.providesFullAccessTo) detailBlocks.push(`
@@ -277,7 +296,7 @@ function renderMsGraph(data, search = '') {
       if (!match) return '';
       let details = '';
       // Always show Tier definition first
-      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('MSGraph', tier)}</span></div>`;
+      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier name:</strong> ${getTierName('MSGraph', tier)}</span><br><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('MSGraph', tier)}</span></div>`;
       let detailBlocks = [];
       if (pathType) detailBlocks.push(`
         <div class="popup-section">
