@@ -190,6 +190,7 @@ function renderAzure(data, search = '') {
           <div class="card-content">
             <span class="tier-badge ${getTierClass('azure', tier)}">${getTierLabel('azure', tier)}</span>
             <strong>${name}</strong>
+            ${item.documentationUri ? `<a href="${item.documentationUri}" target="_blank" class="has-text-link is-size-7" style="margin-left: 0.5em;" title="View Documentation">📖</a>` : ''}
             ${id ? `<span class="has-text-grey is-size-7">Role Id: ${id}</span>` : ''}
             <span class="icon is-pulled-right"><i class="fas fa-chevron-down"></i></span>
             ${isDirect ? '<span class="crown-emoji-entry" style="display:inline-block; float:none; font-size:0.95em; margin-left:0.4em; vertical-align:middle; opacity:0.85; position:relative; top:2px;">💎</span>' : ''}
@@ -248,6 +249,7 @@ function renderEntra(data, search = '') {
           <div class="card-content">
             <span class="tier-badge ${getTierClass('entra', tier)}">${getTierLabel('entra', tier)}</span>
             <strong>${name}</strong>
+            ${item.documentationUri ? `<a href="${item.documentationUri}" target="_blank" class="has-text-link is-size-7" style="margin-left: 0.5em;" title="View Documentation">📖</a>` : ''}
             ${id ? `<span class="has-text-grey is-size-7">Role Id: ${id}</span>` : ''}
             <span class="icon is-pulled-right"><i class="fas fa-chevron-down"></i></span>
             ${isDirect ? '<span class="crown-emoji-entry" style="display:inline-block; float:none; font-size:0.95em; margin-left:0.4em; vertical-align:middle; opacity:0.85; position:relative; top:2px;">💎</span>' : ''}
@@ -298,6 +300,7 @@ function renderMsGraph(data, search = '') {
           <div class="card-content">
             <span class="tier-badge ${getTierClass('msgraph', tier)}">${getTierLabel('msgraph', tier)}</span>
             <strong>${name}</strong>
+            ${item.documentationUri ? `<a href="${item.documentationUri}" target="_blank" class="has-text-link is-size-7" style="margin-left: 0.5em;" title="View Documentation">📖</a>` : ''}
             ${id ? `<span class="has-text-grey is-size-7">Role Id: ${id}</span>` : ''}
             <span class="icon is-pulled-right"><i class="fas fa-chevron-down"></i></span>
             ${isDirect ? '<span class="crown-emoji-entry" style="display:inline-block; float:none; font-size:0.95em; margin-left:0.4em; vertical-align:middle; opacity:0.85; position:relative; top:2px;">💎</span>' : ''}
@@ -318,12 +321,12 @@ async function renderContent(tab, search = '') {
     let b = allData.entra.filter(item => item.id).length;
     let a = window._untieredEntraCount || 0;
     let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json')">more info</span>)</div>`;
+    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json', 'Currently untiered Entra roles')">more info</span>)</div>`;
   } else if (tab === 'msgraph') {
     let b = allData.msgraph.filter(item => item.id).length;
     let a = window._untieredMsGraphCount || 0;
     let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json')">more info</span>)</div>`;
+    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json', 'Currently untiered MS Graph application permissions')">more info</span>)</div>`;
   }
   html += renderTierFilter(tab);
   // Insert tier definitions for each selected tier, with different placeholders for each tab
@@ -581,10 +584,12 @@ function showDisclaimerPopup() {
 }
 
 // Function to open the popup and load JSON data
-async function showJsonPopup(url) {
+async function showJsonPopup(url, title) {
   const popup = document.getElementById('json-popup');
   const content = document.getElementById('json-content');
+  const popupTitle = document.getElementById('json-popup-title');
   content.innerHTML = '<p>Loading...</p>';
+  popupTitle.textContent = title;
   popup.classList.add('is-active');
 
   try {
@@ -609,17 +614,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('.modal-background').addEventListener('click', closeJsonPopup);
 });
 
-// Add "More Info" buttons to untiered sections
+// Update the onclick handlers to pass the appropriate title
 function addMoreInfoButtons() {
   const entraMoreInfoBtn = document.createElement('button');
   entraMoreInfoBtn.className = 'button is-small is-info';
   entraMoreInfoBtn.textContent = 'More Info';
-  entraMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json');
+  entraMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json', 'Currently untiered Entra roles');
 
   const msGraphMoreInfoBtn = document.createElement('button');
   msGraphMoreInfoBtn.className = 'button is-small is-info';
   msGraphMoreInfoBtn.textContent = 'More Info';
-  msGraphMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json');
+  msGraphMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json', 'Currently untiered MS Graph application permissions');
 
   // Append buttons to respective sections (assuming IDs exist for these sections)
   const entraSection = document.getElementById('entra-untiered-section');
