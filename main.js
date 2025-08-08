@@ -634,7 +634,10 @@ function addMoreInfoButtons() {
   if (msGraphSection) msGraphSection.appendChild(msGraphMoreInfoBtn);
 }
 
-document.addEventListener('DOMContentLoaded', addMoreInfoButtons);
+document.addEventListener('DOMContentLoaded', () => {
+  parseURIHash(); // Parse the URI hash on page load to pre-select tab and filters
+  init(); // Initialize the application
+});
 
 // Parse the URI hash on load to pre-select tab and filters
 function parseURIHash() {
