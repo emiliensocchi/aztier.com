@@ -1,17 +1,95 @@
 // main.js - Loads and displays tiered data with search and navigation
 
-const DATA_PATHS = {
-  azure: 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Azure%20roles/tiered-azure-roles.json',
-  entra: 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/tiered-entra-roles.json',
-  msgraph: 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/tiered-msgraph-app-permissions.json',
-};
+let configData;
+let tierDefinitions = {};
+
+async function loadConfig() {
+  // Add detailed logging to diagnose configuration loading issues
+  try {
+    const response = await fetch('./config.json');
+    if (!response.ok) {
+      throw new Error(`Failed to load configuration file. HTTP status: ${response.status}`);
+    }
+    configData = await response.json();
+    console.log('Configuration loaded successfully:', configData);
+  } catch (error) {
+    console.error('Error loading configuration:', error);
+  }
+}
+
+// Fetch and parse tier definitions from the specified URI in config.json
+async function loadTierDefinitions() {
+  try {
+    if (!configData || !configData.tier_definitions) {
+      throw new Error('Tier definitions URI is not specified in the configuration.');
+    }
+    const response = await fetch(configData.tier_definitions);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tier definitions. HTTP status: ${response.status}`);
+    }
+    tierDefinitions = await response.json();
+    console.log('Tier definitions loaded successfully:', tierDefinitions);
+  } catch (error) {
+    console.error('Error loading tier definitions:', error);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadConfig();
+  await loadTierDefinitions();
+  if (configData) {
+    init(); // Initialize the application only after config and tier definitions are loaded
+  } else {
+    console.error('Configuration data is not available. Application initialization aborted.');
+  }
+});
+
+// Ensure configData is validated before calling fetchData
+async function init() {
+  if (!configData || !configData.tiered_asset_uris || !configData.untiered_asset_uris) {
+    console.error('Configuration data is invalid or not loaded.');
+    return;
+  }
+
+  const { tiered_asset_uris, untiered_asset_uris } = configData;
+  TIERED_FILES.azure = tiered_asset_uris.azure;
+  TIERED_FILES.entra = tiered_asset_uris.entra;
+  TIERED_FILES.msgraph = tiered_asset_uris.msgraph;
+
+  UNTIERED_FILES.azure = untiered_asset_uris.azure;
+  UNTIERED_FILES.entra = untiered_asset_uris.entra;
+  UNTIERED_FILES.msgraph = untiered_asset_uris.msgraph;
+
+  const entraUntieredUrl = untiered_asset_uris.entra;
+  const msGraphUntieredUrl = untiered_asset_uris.msgraph;
+
+  window._untieredEntraCount = await fetchUntieredCount(entraUntieredUrl);
+  window._untieredMsGraphCount = await fetchUntieredCount(msGraphUntieredUrl);
+
+  allData.azure = await fetchData('azure');
+  allData.entra = await fetchData('entra');
+  allData.msgraph = await fetchData('msgraph');
+
+  renderContent(currentTab);
+  setupTabs();
+  addDisclaimerButton();
+}
+
+// Add a safeguard to ensure configData is defined before accessing its properties
+const TIERED_FILES = configData?.tiered_asset_uris || {};
+const UNTIERED_FILES = configData?.untiered_asset_uris || {};
 
 let currentTab = 'azure';
 let allData = { azure: [], entra: [], msgraph: [] };
 
 // Utility: fetch JSON
 async function fetchData(tab) {
-  const resp = await fetch(DATA_PATHS[tab]);
+  // Add a check to ensure the tab parameter is valid in fetchData
+  if (!TIERED_FILES[tab]) {
+    console.error(`Invalid tab: ${tab}. No matching URL in TIERED_FILES.`);
+    return [];
+  }
+  const resp = await fetch(TIERED_FILES[tab]);
   return await resp.json();
 }
 
@@ -57,41 +135,17 @@ function getTierLabel(tab, tier) {
 }
 
 function getTierDefinition(assetType, tier) {
-  // assetType: 'Azure', 'Entra', 'MSGraph'
-  if (tier === undefined || tier === '') return '';
-  if (assetType === 'Azure') {
-    if (tier === '0') return 'Roles with a risk of privilege escalation via one or multiple resource types in scope.';
-    else if (tier === '1') return 'Roles with a risk of lateral movement via data-plane access to a specific resource type in scope, but with a limited risk for privilege escalation.';
-    else if (tier === '2') return 'Roles with data-plane access to a specific resource type in scope, but with a limited risk for lateral movement and without a risk for privilege escalation.';
-    else if (tier === '3') return 'Roles with little to no security implications.';
-  } else if (assetType === 'Entra') {
-    if (tier === '0') return 'Roles with a risk of having a direct or indirect path to Global Admin and full tenant takeover.';
-    else if (tier === '1') return 'Roles with full access to individual Microsoft 365 services, limited administrative access to Entra ID, or global read access across services, but without a known path to Global Admin.';
-    else if (tier === '2') return 'Roles with little to no security implications.';
-  } else if (assetType === 'MSGraph') {
-    if (tier === '0') return 'Permissions with a risk of having a direct or indirect path to Global Admin and full tenant takeover.';
-    else if (tier === '1') return 'Permissions with write access to MS Graph scopes or read access to sensitive scopes (e.g. email content), but without a known path to Global Admin.';
-    else if (tier === '2') return 'Permissions with read access to MS Graph scopes and little to no security implications.';
-  } 
+  if (!tierDefinitions[assetType] || !tierDefinitions[assetType][tier]) {
+    return '';
+  }
+  return tierDefinitions[assetType][tier].definition || '';
 }
 
 function getTierName(assetType, tier) {
-  // assetType: 'Azure', 'Entra', 'MSGraph'
-  if (tier === undefined || tier === '') return '';
-  if (assetType === 'Azure') {
-    if (tier === '0') return 'Family of privilege ascenders';
-    else if (tier === '1') return 'Family of lateral navigators';
-    else if (tier === '2') return 'Family of data explorers';
-    else if (tier === '3') return 'Family of unprivileged Azure users';
-  } else if (assetType === 'Entra') {
-    if (tier === '0') return 'Family of Global Admins';
-    else if (tier === '1') return 'Family of M365 and restricted Entra Admins';
-    else if (tier === '2') return 'Family of unprivileged administrators';
-  } else if (assetType === 'MSGraph') {
-    if (tier === '0') return 'Family of Global Admins';
-    else if (tier === '1') return 'Family of restricted Graph permissions';
-    else if (tier === '2') return 'Family of unprivileged Graph permissions';
-  } 
+  if (!tierDefinitions[assetType] || !tierDefinitions[assetType][tier]) {
+    return '';
+  }
+  return tierDefinitions[assetType][tier].name || '';
 }
 
 // On load, all tiers are shown, but no filter is selected (all buttons greyed out)
@@ -332,6 +386,7 @@ function renderMsGraph(data, search = '') {
     }).join('') || '<p>No results found.</p>';
 }
 
+// Replace hard-coded tier definitions in renderContent with dynamic calls to getTierName and getTierDefinition
 async function renderContent(tab, search = '') {
   let html = '';
   if (tab === 'azure') {
@@ -340,53 +395,21 @@ async function renderContent(tab, search = '') {
     let b = allData.entra.filter(item => item.id).length;
     let a = window._untieredEntraCount || 0;
     let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json', 'Currently untiered Entra roles')">more info</span>)</div>`;
+    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('${UNTIERED_FILES.entra}', 'Currently untiered Entra roles')">more info</span>)</div>`;
   } else if (tab === 'msgraph') {
     let b = allData.msgraph.filter(item => item.id).length;
     let a = window._untieredMsGraphCount || 0;
     let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json', 'Currently untiered MS Graph application permissions')">more info</span>)</div>`;
+    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('${UNTIERED_FILES.msgraph}', 'Currently untiered MS Graph application permissions')">more info</span>)</div>`;
   }
   html += renderTierFilter(tab);
-  // Insert tier definitions for each selected tier, with different placeholders for each tab
   const selected = selectedTiers[tab] || [];
-  // Sort selected tiers numerically before rendering definitions
   const sortedSelected = [...selected].sort((a, b) => Number(a) - Number(b));
   if (sortedSelected.length > 0) {
     let defs = sortedSelected.map(tier => {
-      let def = '';
-      if (tab === 'azure') {
-        if (tier === 0) def = 'Tier 0Family of privilege ascenders: Roles with a risk of privilege escalation via one or multiple resource types in scope.';
-        else if (tier === 1) def = 'Tier 1Family of lateral navigators: Roles with a risk of lateral movement via data-plane access to a specific resource type in scope, but with a limited risk for privilege escalation.';
-        else if (tier === 2) def = 'Tier 2Family of data explorers: Roles with data-plane access to a specific resource type in scope, but with a limited risk for lateral movement and without a risk for privilege escalation.';
-        else if (tier === 3) def = 'Tier 3Family of unprivileged Azure users: Roles with little to no security implications.';
-      } else if (tab === 'entra') {
-        if (tier === 0) def = 'Tier 0Family of Global Admins: Roles with a risk of having a direct or indirect path to Global Admin and full tenant takeover.';
-        else if (tier === 1) def = 'Tier 1Family of M365 and restricted Entra Admins: Roles with full access to individual Microsoft 365 services, limited administrative access to Entra ID, or global read access across services, but without a known path to Global Admin.';
-        else if (tier === 2) def = 'Tier 2Family of unprivileged administrators: Roles with little to no security implications.';
-      } else if (tab === 'msgraph') {
-        if (tier === 0) def = 'Tier 0Family of Global Admins: Permissions with a risk of having a direct or indirect path to Global Admin and full tenant takeover.';
-        else if (tier === 1) def = 'Tier 1Family of restricted Graph permissions: Permissions with write access to MS Graph scopes or read access to sensitive scopes (e.g. email content), but without a known path to Global Admin.';
-        else if (tier === 2) def = 'Tier 2Family of unprivileged Graph permission: Permissions with read access to MS Graph scopes and little to no security implications.';
-      }
-      // Extract label and description if present (split at first colon)
-      let label = '';
-      let desc = def;
-      const colonIdx = def.indexOf(':');
-      if (colonIdx !== -1) {
-        label = def.slice(0, colonIdx);
-        desc = def.slice(colonIdx + 1);
-      }
-      // Extract tier number for class
-      let tierNum = '';
-      const match = label.match(/Tier ?(\d+)/);
-      if (match) tierNum = match[1];
-      // Compose tier label with badge style
-      let tierLabel = label;
-      if (tierNum !== '') {
-        tierLabel = `<span class="tier-badge ${getTierClass(tab, parseInt(tierNum))}">Tier ${tierNum}</span>` + label.replace(/Tier ?\d+/, '');
-      }
-      return def ? `<div class="tier-definition faded-tier" style="margin-bottom:0.5em;"><span class="is-size-7"><strong>${tierLabel}</strong>:${desc}</span></div>` : '';
+      const tierName = getTierName(tab.charAt(0).toUpperCase() + tab.slice(1), tier);
+      const tierDefinition = getTierDefinition(tab.charAt(0).toUpperCase() + tab.slice(1), tier);
+      return tierDefinition ? `<div class="tier-definition faded-tier" style="margin-bottom:0.5em;"><span class="is-size-7"><strong>${tierName}</strong>: ${tierDefinition}</span></div>` : '';
     }).join('');
     if (defs) {
       html += `<div id="tier-definition-bar" style="margin-bottom:1em;">${defs}</div>`;
@@ -407,16 +430,13 @@ async function renderContent(tab, search = '') {
   document.getElementById('content-area').innerHTML = html;
   setupTierFilter(tab);
   setupRoleEntryToggles(tab);
-  // After rendering the search bar, set up the clear (cross) button logic
   const wideInput = document.getElementById('searchInputWide');
   const clearBtn = document.getElementById('search-clear-btn');
   if (wideInput) {
     wideInput.value = search;
-    // Remove previous event listeners by cloning
     const wideInputClone = wideInput.cloneNode(true);
     wideInput.parentNode.replaceChild(wideInputClone, wideInput);
     wideInputClone.value = search;
-    // Show/hide clear button based on input
     function updateClearBtn() {
       if (wideInputClone.value.length > 0) {
         clearBtn.classList.add('visible');
@@ -435,7 +455,6 @@ async function renderContent(tab, search = '') {
       }
     });
     updateClearBtn();
-    // Clear button click handler
     clearBtn.onclick = function() {
       wideInputClone.value = '';
       updateClearBtn();
@@ -638,12 +657,12 @@ function addMoreInfoButtons() {
   const entraMoreInfoBtn = document.createElement('button');
   entraMoreInfoBtn.className = 'button is-small is-info';
   entraMoreInfoBtn.textContent = 'More Info';
-  entraMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json', 'Currently untiered Entra roles');
+  entraMoreInfoBtn.onclick = () => showJsonPopup(UNTIERED_FILES.entra, 'Currently untiered Entra roles');
 
   const msGraphMoreInfoBtn = document.createElement('button');
   msGraphMoreInfoBtn.className = 'button is-small is-info';
   msGraphMoreInfoBtn.textContent = 'More Info';
-  msGraphMoreInfoBtn.onclick = () => showJsonPopup('https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json', 'Currently untiered MS Graph application permissions');
+  msGraphMoreInfoBtn.onclick = () => showJsonPopup(UNTIERED_FILES.msgraph, 'Currently untiered MS Graph application permissions');
 
   // Append buttons to respective sections (assuming IDs exist for these sections)
   const entraSection = document.getElementById('entra-untiered-section');
@@ -677,8 +696,22 @@ function parseURIHash() {
 
 // Initial load
 async function init() {
-  const entraUntieredUrl = 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json';
-  const msGraphUntieredUrl = 'https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json';
+  if (!configData || !configData.tiered_asset_uris || !configData.untiered_asset_uris) {
+    console.error('Configuration data is invalid or not loaded.');
+    return;
+  }
+
+  const { tiered_asset_uris, untiered_asset_uris } = configData;
+  TIERED_FILES.azure = tiered_asset_uris.azure;
+  TIERED_FILES.entra = tiered_asset_uris.entra;
+  TIERED_FILES.msgraph = tiered_asset_uris.msgraph;
+
+  UNTIERED_FILES.azure = untiered_asset_uris.azure;
+  UNTIERED_FILES.entra = untiered_asset_uris.entra;
+  UNTIERED_FILES.msgraph = untiered_asset_uris.msgraph;
+
+  const entraUntieredUrl = untiered_asset_uris.entra;
+  const msGraphUntieredUrl = untiered_asset_uris.msgraph;
 
   window._untieredEntraCount = await fetchUntieredCount(entraUntieredUrl);
   window._untieredMsGraphCount = await fetchUntieredCount(msGraphUntieredUrl);

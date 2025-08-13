@@ -1,0 +1,13 @@
+{
+  "tier_definitions": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/refs/heads/main/tier_definitions.json",
+  "tiered_asset_uris": {
+    "azure": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Azure%20roles/tiered-azure-roles.json",
+    "entra": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/tiered-entra-roles.json",
+    "msgraph": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/tiered-msgraph-app-permissions.json"
+  },
+  "untiered_asset_uris": {
+    "azure": "",
+    "entra": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/untiered-entra-roles.json",
+    "msgraph": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Microsoft%20Graph%20application%20permissions/untiered-msgraph-app-permissions.json"
+  }
+}
