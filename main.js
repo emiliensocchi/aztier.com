@@ -134,18 +134,23 @@ function getTierLabel(tab, tier) {
   return 'Tier ?';
 }
 
+
 function getTierDefinition(assetType, tier) {
-  if (!tierDefinitions[assetType] || !tierDefinitions[assetType][tier]) {
-    return '';
-  }
-  return tierDefinitions[assetType][tier].definition || '';
+  if (!tierDefinitions.tier_definitions) return '';
+  const normalizedAssetType = assetType.toLowerCase();
+  const tierKey = `tier_${tier}`;
+  if (!tierDefinitions.tier_definitions[normalizedAssetType]) return '';
+  if (!tierDefinitions.tier_definitions[normalizedAssetType][tierKey]) return '';
+  return tierDefinitions.tier_definitions[normalizedAssetType][tierKey] || '';
 }
 
 function getTierName(assetType, tier) {
-  if (!tierDefinitions[assetType] || !tierDefinitions[assetType][tier]) {
-    return '';
-  }
-  return tierDefinitions[assetType][tier].name || '';
+  if (!tierDefinitions.tier_names) return '';
+  const normalizedAssetType = assetType.toLowerCase();
+  const tierKey = `tier_${tier}`;
+  if (!tierDefinitions.tier_names[normalizedAssetType]) return '';
+  if (!tierDefinitions.tier_names[normalizedAssetType][tierKey]) return '';
+  return tierDefinitions.tier_names[normalizedAssetType][tierKey] || '';
 }
 
 // On load, all tiers are shown, but no filter is selected (all buttons greyed out)
@@ -409,7 +414,9 @@ async function renderContent(tab, search = '') {
     let defs = sortedSelected.map(tier => {
       const tierName = getTierName(tab.charAt(0).toUpperCase() + tab.slice(1), tier);
       const tierDefinition = getTierDefinition(tab.charAt(0).toUpperCase() + tab.slice(1), tier);
-      return tierDefinition ? `<div class="tier-definition faded-tier" style="margin-bottom:0.5em;"><span class="is-size-7"><strong>${tierName}</strong>: ${tierDefinition}</span></div>` : '';
+      // Add tier label with same content, shape, and color as filter menu, but with fixed width and height for consistency
+      const tierLabel = `<span class="button tier-filter-segment tier-badge ${getTierClass(tab, tier)}" style="margin-right:0.5em; font-size:0.85em; min-width:4.2em; width:4.2em; height:2em; padding:0; display:inline-flex; align-items:center; justify-content:center;">${getTierLabel(tab, tier)}</span>`;
+      return tierDefinition ? `<div class="tier-definition faded-tier" style="margin-bottom:0.5em;display:flex;align-items:center;">${tierLabel}<span class="is-size-7"><strong>${tierName}</strong>: ${tierDefinition}</span></div>` : '';
     }).join('');
     if (defs) {
       html += `<div id="tier-definition-bar" style="margin-bottom:1em;">${defs}</div>`;

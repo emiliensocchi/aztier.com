@@ -1,5 +1,5 @@
 {
-  "tier_definitions": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/refs/heads/main/tier_definitions.json",
+  "tier_definitions": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/tier_definitions.json",
   "tiered_asset_uris": {
     "azure": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Azure%20roles/tiered-azure-roles.json",
     "entra": "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/main/Entra%20roles/tiered-entra-roles.json",
