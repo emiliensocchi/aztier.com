@@ -7,6 +7,7 @@
   <title>AzTier: Azure Administrative Tiering</title>
   <meta name="description" content="Collection of personal tier models for Azure, Entra and Microsoft Graph administrative assets, based on known attack paths.">
   <meta name="author" content="Emilien Socchi">
+  <meta name="theme-color" content="#06090f">
   <meta property="og:locale" content="en_US">
   <meta property="og:title" content="AzTier: Azure Administrative Tiering">
   <meta property="og:description" content="Collection of personal tier models for Azure, Entra and Microsoft Graph administrative assets, based on known attack paths.">
@@ -19,51 +20,105 @@
   <meta name="twitter:site" content="@emiliensocchi" />
   <meta name="twitter:creator" content="@emiliensocchi" />
   <!-- end of SEO -->
-  <link rel="icon" type="image/png" href="images/favicon.png">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <link rel="icon" type="image/svg+xml" href="images/favicon.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <section class="section">
-    <div class="container" style="position:relative;">
-      <button id="disclaimer-btn" class="disclaimer-btn-custom disclaimer-btn-canvas-topright" aria-label="Disclaimer">Info</button>
-      <!-- Visually hidden image for SEO/Google thumbnail, but accessible to crawlers and screen readers -->
-      <img src="images/aztier.png" alt="AzTier logo: Azure Administrative Tiering" width="120" height="120" style="position:absolute; left:-9999px; width:120px; height:auto;" loading="eager" />
-      <h1 class="title has-text-primary" id="main-title">🌩️ Azure Administrative Tiering (AzTier)</h1>
-      <h2 class="subtitle">Browse Azure administrative assets categorized based on known attack paths.</h2>
-      <!-- Triple toggle switch -->
-      <div class="tabs is-toggle is-fullwidth is-large" id="main-tabs">
-        <!-- Toggle switch will be injected here by JS -->
-      </div>
-      <!-- Tier filter buttons -->
-      <div id="tier-filter-bar" style="display:flex; align-items:center; justify-content:flex-start; margin-bottom:1.2em;">
-        <!-- Tier buttons will be injected here by JS -->
-      </div>
-      <div id="content-area">
-        <!-- Dynamic content will be injected here -->
-      </div>
+  <a class="skip" href="#asset-table">Skip to results</a>
+  <!-- Visually hidden image for SEO/Google thumbnail, but accessible to crawlers and screen readers -->
+  <img src="images/aztier.png" alt="AzTier logo: Azure Administrative Tiering" width="120" height="120" style="position:absolute; left:-9999px; width:120px; height:auto;" loading="eager" />
+
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="AzTier home">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="4" y="5" width="24" height="5" rx="1.5" class="l0"/>
+        <rect x="7" y="13.5" width="18" height="5" rx="1.5" class="l1"/>
+        <rect x="10" y="22" width="12" height="5" rx="1.5" class="l2"/>
+      </svg>
+      <span class="brand-text">
+        <span class="brand-name">AZTIER</span>
+        <span class="brand-tag">// azure administrative tiering</span>
+      </span>
+    </a>
+    <div class="topbar-right">
+      <span class="sync" id="sync-status" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span><span id="sync-text">loading…</span>
+      </span>
+      <button type="button" class="ghost-btn" id="about-btn" aria-haspopup="dialog">About</button>
+      <a class="ghost-btn" href="https://github.com/emiliensocchi/azure-tiering" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
-  </section>
-  <footer class="footer has-text-centered">
-    <div class="content">
-      <p>Project by <a href="https://github.com/emiliensocchi">Emilien Socchi</a></p>
+  </header>
+
+  <main class="shell">
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="eyebrow">Azure Administrative Tiering · known attack paths</p>
+      <h1 id="hero-title">See the risks behind the roles.</h1>
+      <p class="lede">Azure roles, Entra roles and Microsoft Graph application permissions, tiered based on known attack paths.</p>
+    </section>
+
+    <nav class="scopes" aria-label="Asset family" id="scope-tabs" role="tablist"></nav>
+
+    <section class="overview" aria-label="Tier distribution">
+      <div class="heatbar" id="heatbar" aria-hidden="true"></div>
+      <div class="tier-cards" id="tier-cards"></div>
+    </section>
+
+    <section class="toolbar" aria-label="Filters">
+      <label class="search">
+        <span class="sr-only">Search assets</span>
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="search" type="search" placeholder="Search by name or id…" autocomplete="off" spellcheck="false">
+        <kbd aria-hidden="true">/</kbd>
+      </label>
+      <div class="seg" id="path-seg" role="radiogroup" aria-label="Path to Global Admin"></div>
+      <label class="sort">
+        <span>Sort</span>
+        <select id="sort">
+          <option value="tier">Tier ↑</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </label>
+      <span class="result-count" id="result-count" role="status" aria-live="polite"></span>
+    </section>
+
+    <div class="workspace">
+      <section class="table-wrap" aria-label="Assets">
+        <table class="assets" id="asset-table">
+          <thead>
+            <tr>
+              <th scope="col" class="c-tier">Tier</th>
+              <th scope="col">Asset</th>
+              <th scope="col" class="c-path" id="third-col">Path</th>
+              <th scope="col" class="c-id">Id</th>
+            </tr>
+          </thead>
+          <tbody id="asset-rows"></tbody>
+        </table>
+        <p class="empty" id="empty" hidden>No assets match these filters.</p>
+      </section>
+
+      <aside class="detail" id="detail" aria-live="polite" aria-label="Asset details"></aside>
     </div>
+  </main>
+
+  <footer class="foot">
+    <span>Personal tier models based on known attack paths. Not a Microsoft service or product.</span>
+    <span>Project by <a href="https://github.com/emiliensocchi" target="_blank" rel="noopener">Emilien Socchi</a></span>
   </footer>
-  <!-- Modal structure for JSON data -->
-  <div id="json-popup" class="modal">
-    <div class="modal-background"></div>
-    <div class="modal-content">
-      <div class="box">
-        <button class="delete" id="close-popup" aria-label="close"></button>
-        <h3 id="json-popup-title" class="title is-4">Details</h3>
-        <div id="json-content" style="max-height: 60vh; overflow-y: auto;"></div>
-      </div>
-    </div>
-  </div>
+
+  <dialog id="about" aria-labelledby="about-title">
+    <h2 id="about-title">About AzTier</h2>
+    <p>This is a simple frontend for the <a href="https://github.com/emiliensocchi/azure-tiering" target="_blank" rel="noopener">Azure Administrative Tiering (AzTier)</a> project.</p>
+    <p>Each asset is assigned to a tier based on known attack paths towards full tenant takeover. Lower tier = closer to Global Admin. <strong>Direct</strong> paths reach Global Admin with the asset alone; <strong>indirect</strong> paths require pivoting through another identity or resource.</p>
+    <h3>Disclaimer</h3>
+    <p>AzTier is not a Microsoft service or product, but a personal project with no implicit or explicit obligations. For more information, see the project's <a href="https://github.com/emiliensocchi/azure-tiering?tab=readme-ov-file#-disclaimer" target="_blank" rel="noopener">original disclaimer</a>.</p>
+    <form method="dialog"><button class="primary-btn" autofocus>Close</button></form>
+  </dialog>
+
   <script src="main.js"></script>
 </body>
 </html>

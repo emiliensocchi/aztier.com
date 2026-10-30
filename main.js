@@ -1,735 +1,498 @@
-// main.js - Loads and displays tiered data with search and navigation
+// main.js - AzTier frontend: loads tiered assets and renders the tiering console.
+(function () {
+  'use strict';
 
-let configData;
-let tierDefinitions = {};
+  const SCOPES = {
+    azure: { label: 'Azure roles', sub: 'RBAC · built-in', icon: 'images/azure.png', tiers: ['0', '1', '2', '3'], hasPath: false },
+    entra: { label: 'Entra roles', sub: 'Directory roles', icon: 'images/entraid.png', tiers: ['0', '1', '2'], hasPath: true },
+    msgraph: { label: 'MS Graph', sub: 'Application permissions', icon: 'images/msgraph.png', tiers: ['0', '1', '2'], hasPath: true },
+  };
+  const TARGETS = {
+    azure: { 0: 'Privilege escalation', 1: 'Lateral movement', 2: 'Data-plane access', 3: 'Minimal impact' },
+    entra: { 0: 'Global Admin', 1: 'M365 / restricted Entra admin', 2: 'Unprivileged admin' },
+    msgraph: { 0: 'Global Admin', 1: 'Restricted Graph scope', 2: 'Unprivileged access' },
+  };
+  const TABS = Object.keys(SCOPES);
 
-async function loadConfig() {
-  // Add detailed logging to diagnose configuration loading issues
-  try {
-    const response = await fetch('./config.json');
-    if (!response.ok) {
-      throw new Error(`Failed to load configuration file. HTTP status: ${response.status}`);
-    }
-    configData = await response.json();
-    console.log('Configuration loaded successfully:', configData);
-  } catch (error) {
-    console.error('Error loading configuration:', error);
+  const data = { names: {}, definitions: {}, tiered: { azure: [], entra: [], msgraph: [] }, untiered: { azure: null, entra: null, msgraph: null } };
+  let loaded = false;
+  let loadError = null;
+  let refIndex = null;
+  const navHistory = [];
+  const state = { tab: 'azure', tiers: [], pathType: 'all', search: '', selectedId: null, showUntiered: false, sort: 'tier' };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const tierClass = (t) => (t === null || t === undefined ? 'tx' : `t${t}`);
+  const tierLabel = (t) => (t === null || t === undefined ? 'T?' : `T${t}`);
+  const familyName = (tab, t) => data.names?.[tab]?.[`tier_${t}`] || '';
+  const familyDef = (tab, t) => data.definitions?.[tab]?.[`tier_${t}`] || '';
+  const narrow = () => window.matchMedia('(max-width: 960px)').matches;
+
+  // ---------- Data ----------
+
+  const str = (v, max = 4000) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const httpsOnly = (v) => (/^https:\/\//.test(str(v)) ? str(v, 1000) : '');
+
+  function normalize(list, tiered) {
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((x) => x && typeof x === 'object' && typeof x.assetName === 'string')
+      .map((x) => ({
+        id: str(x.id, 200) || str(x.assetName, 200),
+        tier: tiered && ['0', '1', '2', '3'].includes(String(x.tier)) ? String(x.tier) : null,
+        name: str(x.assetName, 300),
+        definition: str(x.assetDefinition),
+        docUri: httpsOnly(x.documentationUri),
+        pathType: str(x.pathType, 40),
+        shortestPath: str(x.shortestPath),
+        example: str(x.example),
+        worstCase: str(x.worstCaseScenario),
+        fullAccessTo: str(x.providesFullAccessTo),
+        detectedOn: str(x.detectedOn, 40),
+        apiEvent: str(x.apiEvent, 40),
+      }));
   }
-}
 
-// Fetch and parse tier definitions from the specified URI in config.json
-async function loadTierDefinitions() {
-  try {
-    if (!configData || !configData.tier_definitions) {
-      throw new Error('Tier definitions URI is not specified in the configuration.');
-    }
-    const response = await fetch(configData.tier_definitions);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch tier definitions. HTTP status: ${response.status}`);
-    }
-    tierDefinitions = await response.json();
-    console.log('Tier definitions loaded successfully:', tierDefinitions);
-  } catch (error) {
-    console.error('Error loading tier definitions:', error);
-  }
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadConfig();
-  await loadTierDefinitions();
-  if (configData) {
-    init(); // Initialize the application only after config and tier definitions are loaded
-  } else {
-    console.error('Configuration data is not available. Application initialization aborted.');
-  }
-});
-
-// Ensure configData is validated before calling fetchData
-async function init() {
-  if (!configData || !configData.tiered_asset_uris || !configData.untiered_asset_uris) {
-    console.error('Configuration data is invalid or not loaded.');
-    return;
+  async function getJson(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    return res.json();
   }
 
-  const { tiered_asset_uris, untiered_asset_uris } = configData;
-  TIERED_FILES.azure = tiered_asset_uris.azure;
-  TIERED_FILES.entra = tiered_asset_uris.entra;
-  TIERED_FILES.msgraph = tiered_asset_uris.msgraph;
-
-  UNTIERED_FILES.azure = untiered_asset_uris.azure;
-  UNTIERED_FILES.entra = untiered_asset_uris.entra;
-  UNTIERED_FILES.msgraph = untiered_asset_uris.msgraph;
-
-  const entraUntieredUrl = untiered_asset_uris.entra;
-  const msGraphUntieredUrl = untiered_asset_uris.msgraph;
-
-  window._untieredEntraCount = await fetchUntieredCount(entraUntieredUrl);
-  window._untieredMsGraphCount = await fetchUntieredCount(msGraphUntieredUrl);
-
-  allData.azure = await fetchData('azure');
-  allData.entra = await fetchData('entra');
-  allData.msgraph = await fetchData('msgraph');
-
-  renderContent(currentTab);
-  setupTabs();
-  addDisclaimerButton();
-}
-
-// Add a safeguard to ensure configData is defined before accessing its properties
-const TIERED_FILES = configData?.tiered_asset_uris || {};
-const UNTIERED_FILES = configData?.untiered_asset_uris || {};
-
-let currentTab = 'azure';
-let allData = { azure: [], entra: [], msgraph: [] };
-
-// Utility: fetch JSON
-async function fetchData(tab) {
-  // Add a check to ensure the tab parameter is valid in fetchData
-  if (!TIERED_FILES[tab]) {
-    console.error(`Invalid tab: ${tab}. No matching URL in TIERED_FILES.`);
-    return [];
+  async function loadAll() {
+    const config = await getJson('./config.json');
+    const tiered = config.tiered_asset_uris || {};
+    const untiered = config.untiered_asset_uris || {};
+    const [defs, ...lists] = await Promise.all([
+      getJson(config.tier_definitions).catch(() => ({})),
+      ...TABS.map((t) => (tiered[t] ? getJson(tiered[t]) : Promise.resolve([]))),
+      ...TABS.map((t) => (untiered[t] ? getJson(untiered[t]).catch(() => null) : Promise.resolve(null))),
+    ]);
+    data.names = defs.tier_names || {};
+    data.definitions = defs.tier_definitions || {};
+    TABS.forEach((t, i) => {
+      data.tiered[t] = normalize(lists[i], true);
+      const u = lists[TABS.length + i];
+      data.untiered[t] = u === null ? null : normalize(u, false);
+    });
   }
-  const resp = await fetch(TIERED_FILES[tab]);
-  return await resp.json();
-}
 
-// Utility: fetch untiered roles/permissions count from JSON file
-async function fetchUntieredCount(url) {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.error(`Failed to fetch untiered data from ${url}`);
-      return 0;
-    }
-    const data = await response.json();
-    return Array.isArray(data) ? data.length : 0;
-  } catch (error) {
-    console.error(`Error fetching untiered data from ${url}:`, error);
-    return 0;
+  // ---------- URL hash (#<tab>[-tier-<n>...][?asset=<id>]) ----------
+
+  function readHash() {
+    const raw = decodeURIComponent(window.location.hash.slice(1));
+    if (!raw) return;
+    const [path, query = ''] = raw.split('?');
+    const [tab, ...rest] = path.split('-');
+    if (!TABS.includes(tab)) return;
+    state.tab = tab;
+    state.tiers = rest[0] === 'tier' ? rest.slice(1).filter((t) => SCOPES[tab].tiers.includes(t)) : [];
+    const asset = new URLSearchParams(query).get('asset');
+    state.selectedId = asset ? asset.slice(0, 200) : null;
+    state.showUntiered = false;
   }
-}
 
-function getTierClass(tab, tier) {
-  // Azure: 0-3, Entra/MSGraph: 0-2
-  if (tab === 'azure') {
-    if (tier === 0 || tier === '0') return 'tier-0';
-    if (tier === 1 || tier === '1') return 'tier-1';
-    if (tier === 2 || tier === '2') return 'tier-2';
-    if (tier === 3 || tier === '3') return 'tier-3';
-  } else {
-    if (tier === 0 || tier === '0') return 'tier-0';
-    if (tier === 1 || tier === '1') return 'tier-1';
-    if (tier === 2 || tier === '2') return 'tier-3'; // Use green for Tier 2 in Entra/MS Graph
+  function writeHash() {
+    let hash = state.tab;
+    if (state.tiers.length) hash += `-tier-${state.tiers.join('-')}`;
+    if (state.selectedId) hash += `?asset=${encodeURIComponent(state.selectedId)}`;
+    if (window.location.hash.slice(1) !== hash) history.replaceState(null, '', `#${hash}`);
   }
-  return 'tier-x';
-}
 
-function getTierLabel(tab, tier) {
-  if (tier === undefined || tier === '') return 'Tier ?';
-  if (tab === 'azure') {
-    if (['0','1','2','3',0,1,2,3].includes(tier)) return 'Tier ' + tier;
-  } else {
-    if (['0','1','2',0,1,2].includes(tier)) return 'Tier ' + tier;
+  // ---------- State ----------
+
+  function setState(patch) {
+    if (patch.tab && patch.tab !== state.tab) Object.assign(state, { selectedId: null, tiers: [], showUntiered: false });
+    Object.assign(state, patch);
+    writeHash();
+    render();
   }
-  return 'Tier ?';
-}
 
-
-function getTierDefinition(assetType, tier) {
-  if (!tierDefinitions.tier_definitions) return '';
-  const normalizedAssetType = assetType.toLowerCase();
-  const tierKey = `tier_${tier}`;
-  if (!tierDefinitions.tier_definitions[normalizedAssetType]) return '';
-  if (!tierDefinitions.tier_definitions[normalizedAssetType][tierKey]) return '';
-  return tierDefinitions.tier_definitions[normalizedAssetType][tierKey] || '';
-}
-
-function getTierName(assetType, tier) {
-  if (!tierDefinitions.tier_names) return '';
-  const normalizedAssetType = assetType.toLowerCase();
-  const tierKey = `tier_${tier}`;
-  if (!tierDefinitions.tier_names[normalizedAssetType]) return '';
-  if (!tierDefinitions.tier_names[normalizedAssetType][tierKey]) return '';
-  return tierDefinitions.tier_names[normalizedAssetType][tierKey] || '';
-}
-
-// On load, all tiers are shown, but no filter is selected (all buttons greyed out)
-let selectedTiers = { azure: null, entra: null, msgraph: null };
-
-function getSelectedTiers(tab) {
-  // If no filter is selected, show all tiers
-  if (!selectedTiers[tab] || selectedTiers[tab].length === 0) {
-    if (tab === 'azure') return [0,1,2,3];
-    return [0,1,2];
+  function currentPool() {
+    return state.showUntiered ? data.untiered[state.tab] || [] : data.tiered[state.tab];
   }
-  return selectedTiers[tab];
-}
 
-function updateURIHash(tab, selectedTiers) {
-  if (!selectedTiers || selectedTiers.length === 0) {
-    history.replaceState(null, '', `#${tab}`);
-  } else {
-    const hash = `${tab}-tier-${selectedTiers.join('-')}`;
-    history.replaceState(null, '', `#${hash}`);
+  function matches(a) {
+    const q = state.search.trim().toLowerCase();
+    return (
+      (state.showUntiered || state.tiers.length === 0 || state.tiers.includes(a.tier)) &&
+      (state.showUntiered || !SCOPES[state.tab].hasPath || state.pathType === 'all' || a.pathType.toLowerCase() === state.pathType) &&
+      (!q || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q))
+    );
   }
-}
 
-function setupTierFilter(tab) {
-  const group = document.getElementById('tier-filter-group');
-  if (!group) return;
-  // Remove any previous listeners by replacing the node
-  const newGroup = group.cloneNode(true);
-  group.parentNode.replaceChild(newGroup, group);
-  newGroup.addEventListener('click', (e) => {
-    const btn = e.target.closest('.tier-filter-segment');
-    if (!btn) return;
-    const tier = parseInt(btn.getAttribute('data-tier'));
-    // Toggle tier selection (multi-select, allow deselect)
-    if (!selectedTiers[tab] || selectedTiers[tab].length === 0) {
-      selectedTiers[tab] = [tier];
-    } else {
-      const idx = selectedTiers[tab].indexOf(tier);
-      if (idx === -1) {
-        selectedTiers[tab].push(tier);
-      } else {
-        selectedTiers[tab] = selectedTiers[tab].filter(t => t !== tier);
+  function visibleAssets() {
+    return currentPool()
+      .filter(matches)
+      .sort((a, b) =>
+        state.sort === 'name' ? a.name.localeCompare(b.name) : (a.tier ?? '9').localeCompare(b.tier ?? '9') || a.name.localeCompare(b.name),
+      );
+  }
+
+  // ---------- Cross-references in shortest paths ----------
+
+  // Exact asset names only, longest first so "Storage Account Contributor" wins over "Contributor".
+  function buildRefIndex() {
+    const byName = new Map();
+    for (const tab of TABS) {
+      for (const a of data.tiered[tab]) {
+        if (!a.name) continue;
+        if (!byName.has(a.name)) byName.set(a.name, []);
+        byName.get(a.name).push({ tab, id: a.id, tier: a.tier, name: a.name });
       }
     }
-    updateURIHash(tab, selectedTiers[tab]);
-    renderContent(tab, document.getElementById('searchInputWide').value);
-  });
-}
+    const names = [...byName.keys()].sort((x, y) => y.length - x.length);
+    if (!names.length) return null;
+    const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Graph permission names contain dots, so a trailing "." only blocks a match when followed by a word char.
+    const re = new RegExp(`(?<![\\w.-])(${names.map(reEsc).join('|')})(?![\\w-]|\\.\\w)`, 'g');
+    return { byName, re };
+  }
 
-function renderTierFilter(tab) {
-  let maxTier = 3;
-  if (tab === 'entra' || tab === 'msgraph') maxTier = 2;
-  // Place label and buttons in the same flex container
-  let html = '<div class="is-flex is-align-items-center flex-wrap" id="tier-filter-group" style="margin-bottom:1.5em; gap: 0.5em; justify-content:flex-start; display:flex; flex-wrap:wrap; align-items:center;">';
-  html += '<span style="font-size:1em;font-weight:600;color:#3570b3;margin-right:0.7em;letter-spacing:0.01em;white-space:nowrap;">Filter:</span>';
-  const selected = selectedTiers[tab] || [];
-  for (let i = 0; i <= maxTier; i++) {
-    let btnClass = `button tier-filter-segment tier-badge ${getTierClass(tab, i)}`;
-    if (selected.includes(i)) {
-      btnClass += ' is-selected';
-    } else {
-      btnClass += ' faded-tier';
+  function linkifyAssets(text, self) {
+    if (!refIndex || !text) return esc(text);
+    let out = '';
+    let last = 0;
+    for (const m of text.matchAll(refIndex.re)) {
+      const candidates = refIndex.byName.get(m[1]);
+      const target = candidates.find((c) => c.tab === state.tab) || candidates[0];
+      out += esc(text.slice(last, m.index));
+      if (target.id === self.id && target.tab === state.tab) {
+        out += esc(m[1]);
+      } else {
+        const where = target.tab === state.tab ? '' : ` · ${SCOPES[target.tab].label}`;
+        out += `<button type="button" class="ref ${tierClass(target.tier)}" data-ref-tab="${target.tab}" data-ref-id="${esc(target.id)}" title="Open ${esc(target.name)} (${tierLabel(target.tier)}${esc(where)})"><span class="ref-tier">${tierLabel(target.tier)}</span>${esc(m[1])}</button>`;
+      }
+      last = m.index + m[1].length;
     }
-    html += `<button class="${btnClass}" data-tier="${i}" type="button" style="margin-right:0.4em; margin-bottom:0.3em;">Tier ${i}</button>`;
+    return out + esc(text.slice(last));
   }
-  html += '</div>';
-  return html;
-}
 
-// Renderers for each tab
-function renderAzure(data, search = '') {
-  const tiers = getSelectedTiers('azure').map(String);
-  return data
-    .filter(item => item.tier !== undefined && tiers.includes(String(item.tier)))
-    .map((item, idx) => {
-      const tier = item.tier !== undefined ? item.tier : '';
-      const name = item.assetName || item.name || '';
-      const id = item.id || '';
-      const pathType = item.pathType || '';
-      const isDirect = pathType && pathType.toLowerCase() === 'direct';
-      // Only match against name and id 
-      const match = (name + id).toLowerCase().includes(search.toLowerCase());
-      if (!match) return '';
-      let details = '';
-      // Always show Tier definition first
-      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier name:</strong> ${getTierName('Azure', tier)}</span><br><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('Azure', tier)}</span></div>`;
-      // Card stack for details
-      let detailBlocks = [];
-      if (tier === 2 || tier === '2' || tier === 3 || tier === '3') {
-        if (item.worstCaseScenario) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">⚠️</span> <strong>Worst-case scenario:</strong></span>
-            <span class="popup-section-value">${item.worstCaseScenario}</span>
-          </div>`);
-      } else {
-        if (pathType) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">🛡️</span> <strong>Path Type:</strong></span>
-            <span class="popup-section-value">${pathType}${isDirect ? ' <span class=\'crown-emoji\'>💎</span>' : ''}</span>
-          </div>`);
-        if (item.shortestPath) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">🗡️</span> <strong>Attack Path:</strong></span>
-            <span class="popup-section-value">${item.shortestPath}</span>
-          </div>`);
-        if (item.example) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">💡</span> <strong>Example:</strong></span>
-            <span class="popup-section-value">${item.example}</span>
-          </div>`);
-      }
-      details += detailBlocks.join('');
-      return `
-        <div class="card role-entry" data-idx="${idx}">
-          <div class="card-content">
-            <span class="tier-badge ${getTierClass('azure', tier)}">${getTierLabel('azure', tier)}</span>
-            <strong>${name}</strong>
-            ${item.documentationUri ? `<a href="${item.documentationUri}" target="_blank" class="has-text-link is-size-7" style="margin-left: 0.5em;" title="View Documentation">📖</a>` : ''}
-            ${id ? `<span class="has-text-grey is-size-7">Role Id: ${id}</span>` : ''}
-            <span class="icon is-pulled-right"><i class="fas fa-chevron-down"></i></span>
-            ${isDirect ? '<span class="crown-emoji-entry" style="display:inline-block; float:none; font-size:0.95em; margin-left:0.4em; vertical-align:middle; opacity:0.85; position:relative; top:2px;">💎</span>' : ''}
-            <div class="role-details" style="display:none; margin-top:0.7em;">
-              ${details}
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('') || '<p>No results found.</p>';
-}
-
-function renderEntra(data, search = '') {
-  const tiers = getSelectedTiers('entra').map(String);
-  return data
-    .filter(item => item.tier !== undefined && tiers.includes(String(item.tier)))
-    .map((item, idx) => {
-      const tier = item.tier !== undefined ? item.tier : '';
-      const name = item.assetName || item.name || '';
-      const id = item.id || '';
-      const pathType = item.pathType || '';
-      const isDirect = pathType && pathType.toLowerCase() === 'direct';
-      // Only match against name and id
-      const match = (name + id).toLowerCase().includes(search.toLowerCase());
-      if (!match) return '';
-      let details = '';
-      // Always show Tier definition first
-      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier name:</strong> ${getTierName('Entra', tier)}</span><br><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('Entra', tier)}</span></div>`;
-      let detailBlocks = [];
-      if (tier === 1 || tier === '1') {
-        if (item.providesFullAccessTo) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">🔓</span> <strong>Provides full access to:</strong></span>
-            <span class="popup-section-value">${item.providesFullAccessTo}</span>
-          </div>`);
-      } else {
-        if (pathType) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">🛡️</span> <strong>Path Type:</strong></span>
-            <span class="popup-section-value">${pathType}${isDirect ? ' <span class=\'crown-emoji\'>💎</span>' : ''}</span>
-          </div>`);
-        if (item.shortestPath) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">🗡️</span> <strong>Attack Path:</strong></span>
-            <span class="popup-section-value">${item.shortestPath}</span>
-          </div>`);
-        if (item.example) detailBlocks.push(`
-          <div class="popup-section">
-            <span class="popup-section-title"><span class="icon">💡</span> <strong>Example:</strong></span>
-            <span class="popup-section-value">${item.example}</span>
-          </div>`);
-      }
-      details += detailBlocks.join('');
-      return `
-        <div class="card role-entry" data-idx="${idx}">
-          <div class="card-content">
-            <span class="tier-badge ${getTierClass('entra', tier)}">${getTierLabel('entra', tier)}</span>
-            <strong>${name}</strong>
-            ${item.documentationUri ? `<a href="${item.documentationUri}" target="_blank" class="has-text-link is-size-7" style="margin-left: 0.5em;" title="View Documentation">📖</a>` : ''}
-            ${id ? `<span class="has-text-grey is-size-7">Role Id: ${id}</span>` : ''}
-            <span class="icon is-pulled-right"><i class="fas fa-chevron-down"></i></span>
-            ${isDirect ? '<span class="crown-emoji-entry" style="display:inline-block; float:none; font-size:0.95em; margin-left:0.4em; vertical-align:middle; opacity:0.85; position:relative; top:2px;">💎</span>' : ''}
-            <div class="role-details" style="display:none; margin-top:0.7em;">
-              ${details}
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('') || '<p>No results found.</p>';
-}
-
-function renderMsGraph(data, search = '') {
-  const tiers = getSelectedTiers('msgraph').map(String);
-  return data
-    .filter(item => item.tier !== undefined && tiers.includes(String(item.tier)))
-    .map((item, idx) => {
-      const tier = item.tier !== undefined ? item.tier : '';
-      const name = item.assetName || item.name || '';
-      const id = item.id || '';
-      const pathType = item.pathType || '';
-      const isDirect = pathType && pathType.toLowerCase() === 'direct';
-      // Only match against name and id
-      const match = (name + id).toLowerCase().includes(search.toLowerCase());
-      if (!match) return '';
-      let details = '';
-      // Always show Tier definition first
-      details += `<div class="tier-definition faded-tier"><span class="is-size-7"><strong>Tier name:</strong> ${getTierName('MSGraph', tier)}</span><br><span class="is-size-7"><strong>Tier definition:</strong> ${getTierDefinition('MSGraph', tier)}</span></div>`;
-      let detailBlocks = [];
-      if (pathType) detailBlocks.push(`
-        <div class="popup-section">
-          <span class="popup-section-title"><span class="icon">🛡️</span> <strong>Path Type:</strong></span>
-          <span class="popup-section-value">${pathType}${isDirect ? ' <span class=\'crown-emoji\'>💎</span>' : ''}</span>
-        </div>`);
-      if (item.shortestPath) detailBlocks.push(`
-        <div class="popup-section">
-          <span class="popup-section-title"><span class="icon">🗡️</span> <strong>Attack Path:</strong></span>
-          <span class="popup-section-value">${item.shortestPath}</span>
-        </div>`);
-      if (item.example) detailBlocks.push(`
-        <div class="popup-section">
-          <span class="popup-section-title"><span class="icon">💡</span> <strong>Example:</strong></span>
-          <span class="popup-section-value">${item.example}</span>
-        </div>`);
-      details += detailBlocks.join('');
-      return `
-        <div class="card role-entry" data-idx="${idx}">
-          <div class="card-content">
-            <span class="tier-badge ${getTierClass('msgraph', tier)}">${getTierLabel('msgraph', tier)}</span>
-            <strong>${name}</strong>
-            ${item.documentationUri ? `<a href="${item.documentationUri}" target="_blank" class="has-text-link is-size-7" style="margin-left: 0.5em;" title="View Documentation">📖</a>` : ''}
-            ${id ? `<span class="has-text-grey is-size-7">Role Id: ${id}</span>` : ''}
-            <span class="icon is-pulled-right"><i class="fas fa-chevron-down"></i></span>
-            ${isDirect ? '<span class="crown-emoji-entry" style="display:inline-block; float:none; font-size:0.95em; margin-left:0.4em; vertical-align:middle; opacity:0.85; position:relative; top:2px;">💎</span>' : ''}
-            <div class="role-details" style="display:none; margin-top:0.7em;">
-              ${details}
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('') || '<p>No results found.</p>';
-}
-
-// Replace hard-coded tier definitions in renderContent with dynamic calls to getTierName and getTierDefinition
-async function renderContent(tab, search = '') {
-  let html = '';
-  if (tab === 'azure') {
-    html += '<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: n/a (supports only common roles)</div>';
-  } else if (tab === 'entra') {
-    let b = allData.entra.filter(item => item.id).length;
-    let a = window._untieredEntraCount || 0;
-    let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('${UNTIERED_FILES.entra}', 'Currently untiered Entra roles')">more info</span>)</div>`;
-  } else if (tab === 'msgraph') {
-    let b = allData.msgraph.filter(item => item.id).length;
-    let a = window._untieredMsGraphCount || 0;
-    let c = b + a;
-    html += `<div class="section-label has-text-grey is-size-7" style="margin-bottom:0.7em; font-weight:500;">Currently untiered: ${a}/${c} (<span class='link-like' onclick="showJsonPopup('${UNTIERED_FILES.msgraph}', 'Currently untiered MS Graph application permissions')">more info</span>)</div>`;
+  function openAsset(tab, id, { remember = true } = {}) {
+    if (remember && state.selectedId) navHistory.push({ tab: state.tab, id: state.selectedId });
+    const patch = { tab, selectedId: id };
+    const target = data.tiered[tab].find((x) => x.id === id);
+    const tabReset = tab !== state.tab;
+    if (!tabReset && (state.showUntiered || !target || !matches(target))) {
+      Object.assign(patch, { tiers: [], pathType: 'all', search: '', showUntiered: false });
+    }
+    setState(patch);
+    if (tabReset && target && !matches(target)) setState({ pathType: 'all', search: '' });
+    focusDetail();
   }
-  html += renderTierFilter(tab);
-  const selected = selectedTiers[tab] || [];
-  const sortedSelected = [...selected].sort((a, b) => Number(a) - Number(b));
-  if (sortedSelected.length > 0) {
-    let defs = sortedSelected.map(tier => {
-      const tierName = getTierName(tab.charAt(0).toUpperCase() + tab.slice(1), tier);
-      const tierDefinition = getTierDefinition(tab.charAt(0).toUpperCase() + tab.slice(1), tier);
-      // Add tier label with same content, shape, and color as filter menu, but with fixed width and height for consistency
-      const tierLabel = `<span class="button tier-filter-segment tier-badge ${getTierClass(tab, tier)}" style="margin-right:0.5em; font-size:0.85em; min-width:4.2em; width:4.2em; height:2em; padding:0; display:inline-flex; align-items:center; justify-content:center;">${getTierLabel(tab, tier)}</span>`;
-      return tierDefinition ? `<div class="tier-definition faded-tier" style="margin-bottom:0.5em;display:flex;align-items:center;">${tierLabel}<span class="is-size-7"><strong>${tierName}</strong>: ${tierDefinition}</span></div>` : '';
+
+  function scrollSelectedRowIntoTable() {
+    const wrap = document.querySelector('.table-wrap');
+    const row = document.querySelector('tr[aria-selected="true"]');
+    if (!wrap || !row) return;
+    const head = wrap.querySelector('thead')?.offsetHeight || 0;
+    const top = row.offsetTop - head;
+    const bottom = row.offsetTop + row.offsetHeight - wrap.clientHeight;
+    if (wrap.scrollTop > top) wrap.scrollTop = top;
+    else if (wrap.scrollTop < bottom) wrap.scrollTop = bottom;
+  }
+
+  function focusDetail() {
+    requestAnimationFrame(() => {
+      scrollSelectedRowIntoTable();
+      $('detail').scrollTop = 0;
+      if (narrow()) $('detail').scrollIntoView({ block: 'start', behavior: 'smooth' });
+      $('detail').querySelector('h2')?.focus({ preventScroll: true });
+    });
+  }
+
+  // ---------- Rendering ----------
+
+  function renderScopes() {
+    $('scope-tabs').innerHTML = TABS.map((key) => {
+      const s = SCOPES[key];
+      const sel = state.tab === key;
+      return `<button type="button" class="scope" role="tab" data-tab="${key}" aria-selected="${sel}" tabindex="${sel ? 0 : -1}">
+        <img src="${s.icon}" alt="" width="28" height="28">
+        <span><span class="scope-label">${esc(s.label)}</span><span class="scope-sub">${esc(s.sub)}</span></span>
+        <span class="scope-count">${loaded ? data.tiered[key].length : '—'}</span>
+      </button>`;
     }).join('');
-    if (defs) {
-      html += `<div id="tier-definition-bar" style="margin-bottom:1em;">${defs}</div>`;
+  }
+
+  function renderOverview() {
+    const scope = SCOPES[state.tab];
+    if (!loaded) {
+      $('heatbar').innerHTML = '';
+      $('tier-cards').innerHTML = '';
+      return;
     }
+    const list = data.tiered[state.tab];
+    const counts = Object.fromEntries(scope.tiers.map((t) => [t, list.filter((a) => a.tier === t).length]));
+    const total = list.length || 1;
+    const filtering = state.tiers.length > 0 || state.showUntiered;
+    const isOn = (t) => !state.showUntiered && state.tiers.includes(t);
+
+    $('heatbar').innerHTML = scope.tiers
+      .map((t) => `<span class="${tierClass(t)} ${filtering && !isOn(t) ? 'dim' : ''}" style="flex-grow:${counts[t]};background:var(--c)" title="Tier ${t}: ${counts[t]}"></span>`)
+      .join('');
+
+    const untiered = data.untiered[state.tab];
+    $('tier-cards').className = `tier-cards ${filtering ? 'filtering' : ''}`;
+    $('tier-cards').innerHTML =
+      scope.tiers
+        .map(
+          (t) => `<button type="button" class="tier-card ${tierClass(t)}" data-tier="${t}" aria-pressed="${isOn(t)}" title="${esc(familyDef(state.tab, t))}">
+            <span class="tc-head"><span class="tc-tier">TIER ${t}</span><span class="tc-pct">${Math.round((counts[t] / total) * 100)}%</span></span>
+            <span class="tc-count">${counts[t]}</span>
+            <span class="tc-name">${esc(familyName(state.tab, t))}</span>
+          </button>`,
+        )
+        .join('') +
+      (untiered
+        ? `<button type="button" class="tier-card untiered" data-untiered="1" aria-pressed="${state.showUntiered}">
+            <span class="tc-head"><span class="tc-tier">UNTIERED</span><span class="tc-pct">triage queue</span></span>
+            <span class="tc-count">${untiered.length}</span>
+            <span class="tc-name">New or changed, awaiting analysis</span>
+          </button>`
+        : `<div class="tier-card untiered" aria-disabled="true">
+            <span class="tc-head"><span class="tc-tier">UNTIERED</span></span>
+            <span class="tc-count">n/a</span>
+            <span class="tc-name">Only common Azure roles are tiered</span>
+          </div>`);
   }
-  html += '<div class="field" style="margin-bottom:1.5em; position:relative;">' +
-    '<div class="control has-icons-left has-icons-right">' +
-      '<input class="input is-medium" type="text" id="searchInputWide" placeholder="Search by name or Id">' +
-      '<span class="icon is-left">' +
-        '<i class="fas fa-search"></i>' +
-      '</span>' +
-      '<span class="icon is-right" id="search-clear-btn"><i class="fas fa-times"></i></span>' +
-    '</div>' +
-  '</div>';
-  if (tab === 'azure') html += renderAzure(allData.azure, search);
-  if (tab === 'entra') html += renderEntra(allData.entra, search);
-  if (tab === 'msgraph') html += renderMsGraph(allData.msgraph, search);
-  document.getElementById('content-area').innerHTML = html;
-  setupTierFilter(tab);
-  setupRoleEntryToggles(tab);
-  const wideInput = document.getElementById('searchInputWide');
-  const clearBtn = document.getElementById('search-clear-btn');
-  if (wideInput) {
-    wideInput.value = search;
-    const wideInputClone = wideInput.cloneNode(true);
-    wideInput.parentNode.replaceChild(wideInputClone, wideInput);
-    wideInputClone.value = search;
-    function updateClearBtn() {
-      if (wideInputClone.value.length > 0) {
-        clearBtn.classList.add('visible');
-      } else {
-        clearBtn.classList.remove('visible');
-      }
-    }
-    wideInputClone.addEventListener('input', e => {
-      updateClearBtn();
-      const value = e.target.value;
-      filterRoleEntries(currentTab, value);
-    });
-    wideInputClone.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
-        wideInputClone.blur();
-      }
-    });
-    updateClearBtn();
-    clearBtn.onclick = function() {
-      wideInputClone.value = '';
-      updateClearBtn();
-      filterRoleEntries(currentTab, '');
-      wideInputClone.focus();
-    };
+
+  function renderToolbar(count) {
+    const seg = $('path-seg');
+    seg.hidden = !SCOPES[state.tab].hasPath || state.showUntiered;
+    seg.innerHTML = [['all', 'All paths'], ['direct', '◆ Direct'], ['indirect', '◇ Indirect']]
+      .map(([v, l]) => `<button type="button" role="radio" data-path="${v}" aria-checked="${state.pathType === v}" tabindex="${state.pathType === v ? 0 : -1}">${l}</button>`)
+      .join('');
+    if (document.activeElement !== $('search')) $('search').value = state.search;
+    $('sort').value = state.sort;
+    $('result-count').textContent = loaded ? `${count} / ${currentPool().length} ${state.showUntiered ? 'untiered' : 'assets'}` : '';
   }
-}
 
-// Add this function to filter entries without re-rendering the input
-function filterRoleEntries(tab, search) {
-  let html = '';
-  if (tab === 'azure') html = renderAzure(allData.azure, search);
-  if (tab === 'entra') html = renderEntra(allData.entra, search);
-  if (tab === 'msgraph') html = renderMsGraph(allData.msgraph, search);
-  // Replace only the entries, not the whole content
-  const contentArea = document.getElementById('content-area');
-  if (!contentArea) return;
-  // Find the first .field (search bar) and tier filter, keep them, replace the rest
-  const nodes = Array.from(contentArea.children);
-  let lastStaticIdx = 0;
-  for (let i = 0; i < nodes.length; ++i) {
-    if (nodes[i].classList.contains('field')) {
-      lastStaticIdx = i;
-    }
+  function renderRows(list) {
+    const showPath = SCOPES[state.tab].hasPath && !state.showUntiered;
+    $('third-col').textContent = state.showUntiered ? 'Event' : showPath ? 'Path' : 'Scope';
+    $('asset-rows').innerHTML = list
+      .map((a) => {
+        const pt = a.pathType.toLowerCase();
+        const third = state.showUntiered
+          ? `<span class="path-tag">${esc(a.apiEvent || '—')}</span>`
+          : showPath
+            ? `<span class="path-tag ${esc(pt)}">${esc(a.pathType || '—')}</span>`
+            : '<span class="path-tag">RBAC</span>';
+        return `<tr data-id="${esc(a.id)}" aria-selected="${a.id === state.selectedId}">
+          <td><span class="pill ${tierClass(a.tier)}">${tierLabel(a.tier)}</span></td>
+          <td><button type="button" class="asset-btn" data-id="${esc(a.id)}">${esc(a.name)}</button></td>
+          <td>${third}</td>
+          <td class="id-cell" title="${esc(a.id)}">${esc(a.id.slice(0, 8))}…</td>
+        </tr>`;
+      })
+      .join('');
+    $('empty').hidden = list.length > 0 || !loaded;
   }
-  // Remove all nodes after the search bar
-  while (contentArea.children.length > lastStaticIdx + 1) {
-    contentArea.removeChild(contentArea.lastChild);
-  }
-  // Insert new entries
-  const temp = document.createElement('div');
-  temp.innerHTML = html;
-  Array.from(temp.children).forEach(child => {
-    contentArea.appendChild(child);
-  });
-  setupRoleEntryToggles(tab);
-}
 
-function setupRoleEntryToggles(tab) {
-  const entries = document.querySelectorAll('.role-entry');
-  entries.forEach(entry => {
-    entry.addEventListener('click', function(e) {
-      // Prevent event bubbling if clicking inside details
-      if (e.target.closest('.role-details')) return;
-      const details = this.querySelector('.role-details');
-      if (details) {
-        // Hide all other details first (accordion behavior)
-        document.querySelectorAll('.role-details').forEach(d => {
-          if (d !== details) d.style.display = 'none';
-        });
-        // Toggle current
-        details.style.display = details.style.display === 'none' || details.style.display === '' ? 'block' : 'none';
-        const icon = this.querySelector('.icon i');
-        if (icon) {
-          icon.classList.toggle('fa-chevron-down');
-          icon.classList.toggle('fa-chevron-up');
-        }
-      }
-    });
-  });
-}
-
-// Tab navigation
-function setupTabs() {
-  const tabList = document.getElementById('main-tabs');
-  if (!tabList) return;
-  // Replace the entire #main-tabs element with a minimalistic triple toggle switch using images and a sliding effect
-  const toggle = document.createElement('div');
-  toggle.className = 'tab-toggle-switch';
-  toggle.innerHTML = `
-    <div class="tab-toggle-slider"></div>
-    <button class="tab-toggle-btn toggle-left" data-tab="azure"><img src="images/azure.png" alt="Azure">Azure Roles</button>
-    <button class="tab-toggle-btn toggle-middle" data-tab="entra"><img src="images/entraid.png" alt="Entra">Entra Roles</button>
-    <button class="tab-toggle-btn toggle-right" data-tab="msgraph"><img src="images/msgraph.png" alt="MS Graph">MS Graph Application Permissions</button>
-  `;
-  tabList.parentNode.replaceChild(toggle, tabList);
-
-  const slider = toggle.querySelector('.tab-toggle-slider');
-  const btns = toggle.querySelectorAll('.tab-toggle-btn');
-  const tabOrder = ['azure', 'entra', 'msgraph'];
-
-  function updateToggleActive() {
-    btns.forEach(btn => {
-      btn.classList.remove('is-active');
-      if (btn.getAttribute('data-tab') === currentTab) btn.classList.add('is-active');
-    });
-    // Move slider
-    const idx = tabOrder.indexOf(currentTab);
-    // Desktop: horizontal slider
-    if (window.innerWidth > 700) {
-      slider.style.left = `calc(${idx * 33.333}% + 0.15em)`;
-      slider.style.top = '0.15em';
-      slider.style.width = 'calc(33.333% - 0.2em)';
-      slider.style.height = 'calc(100% - 0.3em)';
+  function renderChain(a) {
+    const tab = state.tab;
+    const target = TARGETS[tab][a.tier] ?? 'Unknown';
+    const pt = a.pathType.toLowerCase();
+    const steps = [`<li><div class="node src"><small>Granted</small><span>${esc(a.name)}</span></div></li>`];
+    if (tab === 'azure') {
+      steps.push('<li><div class="edge">at assigned scope</div></li>');
+    } else if (pt === 'indirect') {
+      steps.push('<li><div class="edge">abuse</div></li>');
+      steps.push('<li><div class="node pivot"><small>Pivot</small><span>Identity / resource</span></div></li>');
+      steps.push('<li><div class="edge">escalate</div></li>');
+    } else if (pt === 'direct') {
+      steps.push('<li><div class="edge direct">direct</div></li>');
     } else {
-      // Mobile: vertical slider
-      slider.style.left = '0.15em';
-      slider.style.width = 'calc(100% - 0.3em)';
-      slider.style.height = 'calc(33.333% - 0.2em)';
-      slider.style.top = `calc(${idx} * 33.333% + 0.15em)`;
-      slider.style.setProperty('--slider-idx', idx);
+      steps.push('<li><div class="edge">leads to</div></li>');
     }
-    // Optionally, update background gradient for each tab
-    if (idx === 0) slider.style.background = 'linear-gradient(90deg, #4a90e2 60%, #3570b3 100%)';
-    else if (idx === 1) slider.style.background = 'linear-gradient(90deg, #3570b3 60%, #4a90e2 100%)';
-    else slider.style.background = 'linear-gradient(90deg, #3570b3 60%, #4a90e2 100%)';
+    steps.push(`<li><div class="node target"><small>Reach</small><span>${esc(target)}</span></div></li>`);
+    return `<ol class="chain ${tierClass(a.tier)}" aria-label="Attack path from ${esc(a.name)} to ${esc(target)}">${steps.join('')}</ol>`;
   }
 
-  btns.forEach(btn => {
-    btn.onclick = () => {
-      currentTab = btn.getAttribute('data-tab');
-      updateURIHash(currentTab, selectedTiers[currentTab]);
-      updateToggleActive();
-      renderContent(currentTab, document.getElementById('searchInputWide') ? document.getElementById('searchInputWide').value : '');
-    };
-  });
-  window.addEventListener('resize', updateToggleActive);
-  updateToggleActive();
-}
-
-// Add Disclaimer button and popup logic
-function addDisclaimerButton() {
-  // Disclaimer button is now in HTML and styled with .disclaimer-btn-custom
-  const btn = document.getElementById('disclaimer-btn');
-  if (btn && !btn.hasAttribute('data-setup')) {
-    btn.setAttribute('data-setup', 'true');
-    btn.addEventListener('click', showDisclaimerPopup);
+  function highlightScenario(text) {
+    return esc(text).replace(/\bTA\b/g, '<abbr title="Threat actor">TA</abbr>');
   }
-  // Responsive: change title text on mobile
-  function updateTitleForMobile() {
-    const title = document.getElementById('main-title');
-    if (!title) return;
-    if (window.innerWidth <= 600) {
-      title.textContent = '🌩️ AzTier';
+
+  function renderDetail() {
+    const el = $('detail');
+    if (!loaded) {
+      el.innerHTML = `<div class="detail-empty">${loadError ? esc(loadError) : 'Loading tiering data…'}</div>`;
+      return;
+    }
+    const a = currentPool().find((x) => x.id === state.selectedId);
+    if (!a) {
+      el.innerHTML = '<div class="detail-empty">Select an asset to inspect its tier and attack path.<br><br>↑ ↓ to move · / to search</div>';
+      return;
+    }
+    const tc = tierClass(a.tier);
+    const sections = [];
+    if (a.tier !== null) {
+      // Azure tiers 2-3 have no escalation path; they document a worst-case scenario instead.
+      const lowImpactAzure = state.tab === 'azure' && (a.tier === '2' || a.tier === '3');
+      sections.push(`<div class="d-sec"><h3>Attack path</h3>${renderChain(a)}</div>`);
+      if (!lowImpactAzure && a.shortestPath) sections.push(`<div class="d-sec"><h3>Shortest path</h3><p>${linkifyAssets(a.shortestPath, a)}</p></div>`);
+      if (a.fullAccessTo) sections.push(`<div class="d-sec"><h3>Full access to</h3><p>${esc(a.fullAccessTo)}</p></div>`);
+      if (a.worstCase) sections.push(`<div class="d-sec"><h3>Worst-case scenario</h3><div class="callout ${tc}">${esc(a.worstCase)}</div></div>`);
+      if (!lowImpactAzure && a.example) sections.push(`<div class="d-sec"><h3>Example</h3><div class="scenario"><span class="prompt">$ </span>${highlightScenario(a.example)}</div></div>`);
+      sections.push(`<div class="d-sec"><h3>Tier ${a.tier} · ${esc(familyName(state.tab, a.tier))}</h3><p class="soft">${esc(familyDef(state.tab, a.tier))}</p></div>`);
     } else {
-      title.textContent = '🌩️ Azure Administrative Tiering (AzTier)';
+      sections.push(`<div class="d-sec"><h3>Status</h3><div class="callout tx">Awaiting triage: ${esc(a.apiEvent || 'detected')} on ${esc(a.detectedOn || 'unknown date')}.</div></div>`);
     }
+    if (a.definition) sections.push(`<div class="d-sec"><h3>Microsoft definition</h3><p class="soft">${esc(a.definition)}</p></div>`);
+    sections.push(`<div class="d-sec"><h3>Identifiers</h3><dl class="meta">
+        <dt>id</dt><dd><span>${esc(a.id)}</span><button type="button" class="copy-btn" data-copy="${esc(a.id)}">copy</button></dd>
+        ${a.pathType ? `<dt>path</dt><dd>${esc(a.pathType)}</dd>` : ''}
+      </dl></div>`);
+    const actions = [];
+    if (a.docUri) actions.push(`<a class="primary-btn" href="${esc(a.docUri)}" target="_blank" rel="noopener">Microsoft docs ↗</a>`);
+    actions.push('<button type="button" class="ghost-btn" data-share="1">Copy link</button>');
+    sections.push(`<div class="d-actions">${actions.join('')}</div>`);
+
+    const prev = navHistory[navHistory.length - 1];
+    const prevAsset = prev && data.tiered[prev.tab].find((x) => x.id === prev.id);
+    const back = prevAsset ? `<button type="button" class="back-btn" data-back="1">← Back to ${esc(prevAsset.name)}</button>` : '';
+    el.innerHTML = `<div class="${tc}">
+      <div class="d-head">
+        ${back}
+        <div class="row"><span class="pill ${tc}">${a.tier !== null ? `TIER ${a.tier}` : 'UNTIERED'}</span>
+          ${a.pathType.toLowerCase() === 'direct' ? '<span class="path-tag direct">Direct path to Global Admin</span>' : ''}</div>
+        <h2 tabindex="-1">${esc(a.name)}</h2>
+        ${a.tier !== null ? `<span class="d-family">${esc(familyName(state.tab, a.tier))}</span>` : ''}
+      </div>
+      <div class="d-body">${sections.join('')}</div>
+    </div>`;
   }
-  window.addEventListener('resize', updateTitleForMobile);
-  updateTitleForMobile();
-}
 
-function showDisclaimerPopup() {
-  if (document.getElementById('disclaimer-popup')) return;
-  const popup = document.createElement('div');
-  popup.id = 'disclaimer-popup';
-  popup.innerHTML = [
-    '<div class="disclaimer-modal-bg"></div>',
-    '<div class="disclaimer-modal-box">',
-      '<div class="info-section">',
-        '<div class="info-section-title"><span class="icon">ℹ️</span> <strong>About</strong></div>',
-        '<div class="info-section-content" style="margin-bottom:1.5em; font-size:1.1em;">This is a simple frontend for the <a href="https://github.com/emiliensocchi/azure-tiering">Azure Administrative Tiering (AzTier)</a> project.</div>',
-      '</div>',
-      '<div class="info-section">',
-        '<div class="info-section-title"><span class="icon">📢</span> <strong>Disclaimer</strong></div>',
-        '<div class="info-section-content" style="margin-bottom:1.2em; font-size:1.05em;">AzTier is not a Microsoft service or product, but a personal project with no implicit or explicit obligations. For more information, see the project\'s <a href=https://github.com/emiliensocchi/azure-tiering?tab=readme-ov-file#-disclaimer>original disclaimer</a>.</div>',
-      '</div>',
-      '<button class="button is-primary" id="close-disclaimer">Close</button>',
-    '</div>'
-  ].join('');
-  document.body.appendChild(popup);
-  document.getElementById('close-disclaimer').onclick = () => popup.remove();
-  popup.querySelector('.disclaimer-modal-bg').onclick = () => popup.remove();
-}
-
-// Function to open the popup and load JSON data
-async function showJsonPopup(url, title) {
-  const popup = document.getElementById('json-popup');
-  const content = document.getElementById('json-content');
-  const popupTitle = document.getElementById('json-popup-title');
-  content.innerHTML = '<p>Loading...</p>';
-  popupTitle.textContent = title;
-  popup.classList.add('is-active');
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Failed to fetch data');
-    const data = await response.json();
-    content.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
-  } catch (error) {
-    content.innerHTML = `<p class="has-text-danger">Error: ${error.message}</p>`;
+  function render() {
+    renderScopes();
+    renderOverview();
+    const list = loaded ? visibleAssets() : [];
+    renderToolbar(list.length);
+    renderRows(list);
+    renderDetail();
+    const banner = document.querySelector('.banner');
+    if (loadError && !banner) $('scope-tabs').insertAdjacentHTML('beforebegin', `<p class="banner" role="alert">${esc(loadError)}</p>`);
+    if (!loadError && banner) banner.remove();
   }
-}
 
-// Function to close the popup
-function closeJsonPopup() {
-  const popup = document.getElementById('json-popup');
-  popup.classList.remove('is-active');
-}
+  function setSync(kind, text) {
+    $('sync-status').className = `sync ${kind}`;
+    $('sync-text').textContent = text;
+  }
 
-// Attach event listeners for closing the popup
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('close-popup').addEventListener('click', closeJsonPopup);
-  document.querySelector('.modal-background').addEventListener('click', closeJsonPopup);
-});
+  // ---------- Events ----------
 
-// Update the onclick handlers to pass the appropriate title
-function addMoreInfoButtons() {
-  const entraMoreInfoBtn = document.createElement('button');
-  entraMoreInfoBtn.className = 'button is-small is-info';
-  entraMoreInfoBtn.textContent = 'More Info';
-  entraMoreInfoBtn.onclick = () => showJsonPopup(UNTIERED_FILES.entra, 'Currently untiered Entra roles');
+  function selectRow(id, focus) {
+    navHistory.length = 0;
+    setState({ selectedId: id });
+    if (focus) document.querySelector(`.asset-btn[data-id="${CSS.escape(id)}"]`)?.focus();
+    else if (narrow()) focusDetail();
+  }
 
-  const msGraphMoreInfoBtn = document.createElement('button');
-  msGraphMoreInfoBtn.className = 'button is-small is-info';
-  msGraphMoreInfoBtn.textContent = 'More Info';
-  msGraphMoreInfoBtn.onclick = () => showJsonPopup(UNTIERED_FILES.msgraph, 'Currently untiered MS Graph application permissions');
-
-  // Append buttons to respective sections (assuming IDs exist for these sections)
-  const entraSection = document.getElementById('entra-untiered-section');
-  const msGraphSection = document.getElementById('msgraph-untiered-section');
-
-  if (entraSection) entraSection.appendChild(entraMoreInfoBtn);
-  if (msGraphSection) msGraphSection.appendChild(msGraphMoreInfoBtn);
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  parseURIHash(); // Parse the URI hash on page load to pre-select tab and filters
-  init(); // Initialize the application
-});
-
-// Parse the URI hash on load to pre-select tab and filters
-function parseURIHash() {
-  const hash = window.location.hash.slice(1); // Remove the '#' character
-  if (!hash) return;
-
-  const [tab, ...filters] = hash.split('-');
-  if (tab && ['azure', 'entra', 'msgraph'].includes(tab)) {
-    currentTab = tab;
-    if (filters.length > 0 && filters[0] === 'tier') {
-      const tiers = filters.slice(1).map(t => parseInt(t)).filter(t => !isNaN(t));
-      selectedTiers[tab] = tiers;
-    } else {
-      selectedTiers[tab] = [];
+  async function copyText(btn, text, label) {
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'copied';
+    } catch {
+      btn.textContent = 'n/a';
     }
-  }
-}
-
-// Initial load
-async function init() {
-  if (!configData || !configData.tiered_asset_uris || !configData.untiered_asset_uris) {
-    console.error('Configuration data is invalid or not loaded.');
-    return;
+    setTimeout(() => (btn.textContent = label), 1200);
   }
 
-  const { tiered_asset_uris, untiered_asset_uris } = configData;
-  TIERED_FILES.azure = tiered_asset_uris.azure;
-  TIERED_FILES.entra = tiered_asset_uris.entra;
-  TIERED_FILES.msgraph = tiered_asset_uris.msgraph;
+  function wire() {
+    $('scope-tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (b && b.dataset.tab !== state.tab) {
+        navHistory.length = 0;
+        setState({ tab: b.dataset.tab });
+      }
+    });
+    $('scope-tabs').addEventListener('keydown', (e) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      const i = (TABS.indexOf(state.tab) + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length;
+      navHistory.length = 0;
+      setState({ tab: TABS[i] });
+      document.querySelector(`[data-tab="${TABS[i]}"]`)?.focus();
+    });
+    $('tier-cards').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.untiered) return setState({ showUntiered: !state.showUntiered, selectedId: null });
+      const t = b.dataset.tier;
+      const tiers = state.tiers.includes(t) ? state.tiers.filter((x) => x !== t) : [...state.tiers, t].sort();
+      setState({ tiers, showUntiered: false });
+    });
+    $('path-seg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-path]');
+      if (b) setState({ pathType: b.dataset.path });
+    });
+    $('search').addEventListener('input', (e) => setState({ search: e.target.value.slice(0, 200) }));
+    $('sort').addEventListener('change', (e) => setState({ sort: e.target.value }));
+    $('asset-rows').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-id]');
+      if (tr) selectRow(tr.dataset.id, false);
+    });
+    $('asset-rows').addEventListener('keydown', (e) => {
+      if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return;
+      e.preventDefault();
+      const btns = [...document.querySelectorAll('.asset-btn')];
+      const i = btns.indexOf(document.activeElement);
+      const next = btns[Math.max(0, Math.min(btns.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+      if (next) selectRow(next.dataset.id, true);
+    });
+    $('detail').addEventListener('click', (e) => {
+      const ref = e.target.closest('[data-ref-id]');
+      if (ref) return openAsset(ref.dataset.refTab, ref.dataset.refId);
+      if (e.target.closest('[data-back]')) {
+        const prev = navHistory.pop();
+        if (prev) openAsset(prev.tab, prev.id, { remember: false });
+        return;
+      }
+      const copy = e.target.closest('[data-copy]');
+      if (copy) return copyText(copy, copy.dataset.copy, 'copy');
+      const share = e.target.closest('[data-share]');
+      if (share) copyText(share, window.location.href, 'Copy link');
+    });
+    $('about-btn').addEventListener('click', () => $('about').showModal());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) && !$('about').open) {
+        e.preventDefault();
+        $('search').focus();
+      }
+    });
+    window.addEventListener('hashchange', () => {
+      readHash();
+      const id = state.selectedId;
+      if (loaded && id && !data.tiered[state.tab].some((x) => x.id === id) && (data.untiered[state.tab] || []).some((x) => x.id === id)) {
+        state.showUntiered = true;
+      }
+      render();
+    });
+  }
 
-  UNTIERED_FILES.azure = untiered_asset_uris.azure;
-  UNTIERED_FILES.entra = untiered_asset_uris.entra;
-  UNTIERED_FILES.msgraph = untiered_asset_uris.msgraph;
+  async function main() {
+    readHash();
+    wire();
+    render();
+    try {
+      await loadAll();
+      refIndex = buildRefIndex();
+      loaded = true;
+      const id = state.selectedId;
+      if (id && !data.tiered[state.tab].some((x) => x.id === id) && (data.untiered[state.tab] || []).some((x) => x.id === id)) {
+        state.showUntiered = true;
+      }
+      setSync('ok', 'live data');
+      $('sync-status').title = 'Loaded from github.com/emiliensocchi/azure-tiering';
+    } catch (err) {
+      loadError = `Could not load tiering data: ${err.message}`;
+      setSync('err', 'offline');
+    }
+    render();
+    if (state.selectedId) focusDetail();
+  }
 
-  const entraUntieredUrl = untiered_asset_uris.entra;
-  const msGraphUntieredUrl = untiered_asset_uris.msgraph;
-
-  window._untieredEntraCount = await fetchUntieredCount(entraUntieredUrl);
-  window._untieredMsGraphCount = await fetchUntieredCount(msGraphUntieredUrl);
-
-  allData.azure = await fetchData('azure');
-  allData.entra = await fetchData('entra');
-  allData.msgraph = await fetchData('msgraph');
-
-  renderContent(currentTab);
-  setupTabs();
-  addDisclaimerButton();
-}
-
-document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', main);
+})();
