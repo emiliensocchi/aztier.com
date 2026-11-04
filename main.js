@@ -3,9 +3,9 @@
   'use strict';
 
   const SCOPES = {
-    azure: { label: 'Azure roles', sub: 'RBAC · built-in', icon: 'images/azure.png', tiers: ['0', '1', '2', '3'], hasPath: false },
-    entra: { label: 'Entra roles', sub: 'Directory roles', icon: 'images/entraid.png', tiers: ['0', '1', '2'], hasPath: true },
-    msgraph: { label: 'MS Graph', sub: 'Application permissions', icon: 'images/msgraph.png', tiers: ['0', '1', '2'], hasPath: true },
+    azure: { label: 'Azure roles', sub: 'RBAC · built-in', icon: 'images/azure.png', tiers: ['0', '1', '2', '3'], hasPath: false, hasSensitive: false },
+    entra: { label: 'Entra roles', sub: 'Directory roles', icon: 'images/entraid.png', tiers: ['0', '1', '2'], hasPath: true, hasSensitive: true },
+    msgraph: { label: 'MS Graph', sub: 'Application permissions', icon: 'images/msgraph.png', tiers: ['0', '1', '2'], hasPath: true, hasSensitive: true },
   };
   const TARGETS = {
     azure: { 0: 'Privilege escalation', 1: 'Lateral movement', 2: 'Data-plane access', 3: 'Minimal impact' },
@@ -14,12 +14,12 @@
   };
   const TABS = Object.keys(SCOPES);
 
-  const data = { names: {}, definitions: {}, tiered: { azure: [], entra: [], msgraph: [] }, untiered: { azure: null, entra: null, msgraph: null } };
+  const data = { names: {}, definitions: {}, properties: {}, tiered: { azure: [], entra: [], msgraph: [] }, untiered: { azure: null, entra: null, msgraph: null } };
   let loaded = false;
   let loadError = null;
   let refIndex = null;
   const navHistory = [];
-  const state = { tab: 'azure', tiers: [], pathType: 'all', search: '', selectedId: null, showUntiered: false, sort: 'tier' };
+  const state = { tab: 'azure', tiers: [], pathType: 'all', sensitive: false, search: '', selectedId: null, showUntiered: false, sort: 'tier' };
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -49,6 +49,7 @@
         example: str(x.example),
         worstCase: str(x.worstCaseScenario),
         fullAccessTo: str(x.providesFullAccessTo),
+        sensitive: x.sensitiveDataAccess === true,
         detectedOn: str(x.detectedOn, 40),
         apiEvent: str(x.apiEvent, 40),
       }));
@@ -71,14 +72,17 @@
     ]);
     data.names = defs.tier_names || {};
     data.definitions = defs.tier_definitions || {};
+    data.properties = defs.property_definitions || {};
     TABS.forEach((t, i) => {
       data.tiered[t] = normalize(lists[i], true);
+      // Tier 0 assets always provide access to sensitive data, so the property is only stored on Tier 1.
+      if (SCOPES[t].hasSensitive) data.tiered[t].forEach((a) => { a.sensitive = a.sensitive || a.tier === '0'; });
       const u = lists[TABS.length + i];
       data.untiered[t] = u === null ? null : normalize(u, false);
     });
   }
 
-  // ---------- URL hash (#<tab>[-tier-<n>...][?asset=<id>]) ----------
+  // ---------- URL hash (#<tab>[-tier-<n>...][?asset=<id>][&data=sensitive]) ----------
 
   function readHash() {
     const raw = decodeURIComponent(window.location.hash.slice(1));
@@ -88,22 +92,27 @@
     if (!TABS.includes(tab)) return;
     state.tab = tab;
     state.tiers = rest[0] === 'tier' ? rest.slice(1).filter((t) => SCOPES[tab].tiers.includes(t)) : [];
-    const asset = new URLSearchParams(query).get('asset');
+    const params = new URLSearchParams(query);
+    const asset = params.get('asset');
     state.selectedId = asset ? asset.slice(0, 200) : null;
+    state.sensitive = SCOPES[tab].hasSensitive && params.get('data') === 'sensitive';
     state.showUntiered = false;
   }
 
   function writeHash() {
     let hash = state.tab;
     if (state.tiers.length) hash += `-tier-${state.tiers.join('-')}`;
-    if (state.selectedId) hash += `?asset=${encodeURIComponent(state.selectedId)}`;
+    const params = [];
+    if (state.selectedId) params.push(`asset=${encodeURIComponent(state.selectedId)}`);
+    if (state.sensitive) params.push('data=sensitive');
+    if (params.length) hash += `?${params.join('&')}`;
     if (window.location.hash.slice(1) !== hash) history.replaceState(null, '', `#${hash}`);
   }
 
   // ---------- State ----------
 
   function setState(patch) {
-    if (patch.tab && patch.tab !== state.tab) Object.assign(state, { selectedId: null, tiers: [], showUntiered: false });
+    if (patch.tab && patch.tab !== state.tab) Object.assign(state, { selectedId: null, tiers: [], sensitive: false, showUntiered: false });
     Object.assign(state, patch);
     writeHash();
     render();
@@ -113,11 +122,21 @@
     return state.showUntiered ? data.untiered[state.tab] || [] : data.tiered[state.tab];
   }
 
+  // Tiers above 1 never provide sensitive data access (it would make them Tier 1), so the filter is meaningless there.
+  function sensitiveUnavailable() {
+    return state.tiers.length > 0 && state.tiers.every((t) => t === '2' || t === '3');
+  }
+
+  function sensitiveActive() {
+    return state.sensitive && !state.showUntiered && !sensitiveUnavailable();
+  }
+
   function matches(a) {
     const q = state.search.trim().toLowerCase();
     return (
       (state.showUntiered || state.tiers.length === 0 || state.tiers.includes(a.tier)) &&
       (state.showUntiered || !SCOPES[state.tab].hasPath || state.pathType === 'all' || a.pathType.toLowerCase() === state.pathType) &&
+      (!sensitiveActive() || a.sensitive) &&
       (!q || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q))
     );
   }
@@ -175,10 +194,10 @@
     const target = data.tiered[tab].find((x) => x.id === id);
     const tabReset = tab !== state.tab;
     if (!tabReset && (state.showUntiered || !target || !matches(target))) {
-      Object.assign(patch, { tiers: [], pathType: 'all', search: '', showUntiered: false });
+      Object.assign(patch, { tiers: [], pathType: 'all', sensitive: false, search: '', showUntiered: false });
     }
     setState(patch);
-    if (tabReset && target && !matches(target)) setState({ pathType: 'all', search: '' });
+    if (tabReset && target && !matches(target)) setState({ pathType: 'all', sensitive: false, search: '' });
     focusDetail();
   }
 
@@ -264,6 +283,14 @@
     seg.innerHTML = [['all', 'All paths'], ['direct', '◆ Direct'], ['indirect', '◇ Indirect']]
       .map(([v, l]) => `<button type="button" role="radio" data-path="${v}" aria-checked="${state.pathType === v}" tabindex="${state.pathType === v ? 0 : -1}">${l}</button>`)
       .join('');
+    const toggle = $('sensitive-toggle');
+    toggle.hidden = !SCOPES[state.tab].hasSensitive || state.showUntiered;
+    const unavailable = sensitiveUnavailable();
+    toggle.disabled = unavailable;
+    toggle.setAttribute('aria-pressed', String(sensitiveActive()));
+    toggle.title = unavailable
+      ? 'Assets in this tier do not provide access to sensitive data (that would make them Tier 1 or above)'
+      : `All Tier 0 assets provide access to sensitive data. ${data.properties.sensitiveDataAccess || 'Show only assets with access to sensitive data'}`;
     if (document.activeElement !== $('search')) $('search').value = state.search;
     $('sort').value = state.sort;
     $('result-count').textContent = loaded ? `${count} / ${currentPool().length} ${state.showUntiered ? 'untiered' : 'assets'}` : '';
@@ -282,7 +309,7 @@
             : '<span class="path-tag">RBAC</span>';
         return `<tr data-id="${esc(a.id)}" aria-selected="${a.id === state.selectedId}">
           <td><span class="pill ${tierClass(a.tier)}">${tierLabel(a.tier)}</span></td>
-          <td><button type="button" class="asset-btn" data-id="${esc(a.id)}">${esc(a.name)}</button></td>
+          <td><div class="name-cell"><button type="button" class="asset-btn" data-id="${esc(a.id)}">${esc(a.name)}</button>${a.sensitive && a.tier !== '0' ? '<span class="data-tag" title="Access to sensitive data">DATA</span>' : ''}</div></td>
           <td>${third}</td>
           <td class="id-cell" title="${esc(a.id)}">${esc(a.id.slice(0, 8))}…</td>
         </tr>`;
@@ -334,6 +361,7 @@
       sections.push(`<div class="d-sec"><h3>Attack path</h3>${renderChain(a)}</div>`);
       if (!lowImpactAzure && a.shortestPath) sections.push(`<div class="d-sec"><h3>Shortest path</h3><p>${linkifyAssets(a.shortestPath, a)}</p></div>`);
       if (a.fullAccessTo) sections.push(`<div class="d-sec"><h3>Full access to</h3><p>${esc(a.fullAccessTo)}</p></div>`);
+      if (a.sensitive && a.tier !== '0') sections.push(`<div class="d-sec"><h3>Sensitive data access</h3><p class="soft">${esc(data.properties.sensitiveDataAccess || 'Can read or write sensitive data, such as user content, audit and sign-in logs, or secrets.')}</p></div>`);
       if (a.worstCase) sections.push(`<div class="d-sec"><h3>Worst-case scenario</h3><div class="callout ${tc}">${esc(a.worstCase)}</div></div>`);
       if (!lowImpactAzure && a.example) sections.push(`<div class="d-sec"><h3>Example</h3><div class="scenario"><span class="prompt">$ </span>${highlightScenario(a.example)}</div></div>`);
       sections.push(`<div class="d-sec"><h3>Tier ${a.tier} · ${esc(familyName(state.tab, a.tier))}</h3><p class="soft">${esc(familyDef(state.tab, a.tier))}</p></div>`);
@@ -357,7 +385,8 @@
       <div class="d-head">
         ${back}
         <div class="row"><span class="pill ${tc}">${a.tier !== null ? `TIER ${a.tier}` : 'UNTIERED'}</span>
-          ${a.pathType.toLowerCase() === 'direct' ? '<span class="path-tag direct">Direct path to Global Admin</span>' : ''}</div>
+          ${a.pathType.toLowerCase() === 'direct' ? '<span class="path-tag direct">Direct path to Global Admin</span>' : ''}
+          ${a.sensitive && a.tier !== '0' ? '<span class="data-tag">Sensitive data access</span>' : ''}</div>
         <h2 tabindex="-1">${esc(a.name)}</h2>
         ${a.tier !== null ? `<span class="d-family">${esc(familyName(state.tab, a.tier))}</span>` : ''}
       </div>
@@ -428,6 +457,7 @@
       const b = e.target.closest('[data-path]');
       if (b) setState({ pathType: b.dataset.path });
     });
+    $('sensitive-toggle').addEventListener('click', () => setState({ sensitive: !state.sensitive }));
     $('search').addEventListener('input', (e) => setState({ search: e.target.value.slice(0, 200) }));
     $('sort').addEventListener('change', (e) => setState({ sort: e.target.value }));
     $('asset-rows').addEventListener('click', (e) => {
